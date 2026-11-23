@@ -116,5 +116,11 @@ html, body {
 
 /* Animación de pulso en la mira */
 .crosshair-fire {
-    transform: translate(-50%, -50%) scale(1.28) !important;
+    transform: translate(-50%, -50%) scale(1.24) !important;
+}
+
+/* Enganche magnético activo sobre un enemigo */
+.crosshair-locked {
+    transform: scale(1.16);
+    border-style: dashed !important;
 }
