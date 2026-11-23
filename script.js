@@ -1,7 +1,7 @@
 // ============================================================================
 // S.N.A.X. ARCADE: SAUCE BLASTER 3D (FPS HORIZONTAL EN COCINA 3D)
-// Motor WebGL con Three.js, enemigos 3D articulados caminando, tambor giratorio
-// de salsas, control táctil horizontal (twin-stick) y conexión a Google Sheets.
+// Apuntado directo al toque con asistencia magnética (Aim-Assist), auto-fuego
+// al mantener presionado/deslizar y gatillo táctico multi-touch para celular.
 // ============================================================================
 
 const DEFAULT_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbylvNCwAIEdpA9eZVyysRwldPQSklgHcyywPIHVqB6qkPGu5IlngXCgEqCtazrA5FP3/exec";
@@ -189,11 +189,10 @@ const WEAPONS = [
         key: '1',
         hex: 0xef4444,
         cssHex: '#ef4444',
-        badgeClass: 'bg-red-600 text-white border-red-300',
         cooldown: 0.15,
-        speed: 48,
+        speed: 52,
         damage: 28,
-        spread: 0.015,
+        spread: 0.012,
         count: 1,
         splash: 0,
         sound: 'shoot_atomic',
@@ -205,13 +204,12 @@ const WEAPONS = [
         key: '2',
         hex: 0xf97316,
         cssHex: '#f97316',
-        badgeClass: 'bg-orange-500 text-black border-orange-200',
-        cooldown: 0.36,
-        speed: 38,
-        damage: 42,
-        spread: 0.01,
+        cooldown: 0.34,
+        speed: 42,
+        damage: 44,
+        spread: 0.008,
         count: 1,
-        splash: 3.6,
+        splash: 3.8,
         sound: 'shoot_mango',
         desc: 'Proyectil explosivo con daño de área para grupos.'
     },
@@ -221,11 +219,10 @@ const WEAPONS = [
         key: '3',
         hex: 0xd97706,
         cssHex: '#d97706',
-        badgeClass: 'bg-amber-700 text-yellow-200 border-amber-300',
-        cooldown: 0.34,
-        speed: 42,
-        damage: 24,
-        spread: 0.11,
+        cooldown: 0.32,
+        speed: 46,
+        damage: 25,
+        spread: 0.10,
         count: 3,
         splash: 0,
         sound: 'shoot_bbq',
@@ -237,11 +234,10 @@ const WEAPONS = [
         key: '4',
         hex: 0x22c55e,
         cssHex: '#22c55e',
-        badgeClass: 'bg-emerald-500 text-black border-emerald-200',
-        cooldown: 0.25,
-        speed: 62,
-        damage: 48,
-        spread: 0.004,
+        cooldown: 0.24,
+        speed: 66,
+        damage: 50,
+        spread: 0.003,
         count: 1,
         splash: 0,
         sound: 'shoot_ranch',
@@ -314,11 +310,11 @@ const crosshairEl = document.getElementById('crosshair');
 const crosshairRingEl = document.getElementById('crosshair-ring');
 const crosshairDotEl = document.getElementById('crosshair-dot');
 const crosshairSauceTagEl = document.getElementById('crosshair-sauce-tag');
+const touchReticleEl = document.getElementById('touch-reticle');
 const popupContainer = document.getElementById('popup-container');
 
 const rotateDrumBtn = document.getElementById('rotate-drum-btn');
 const sauceDrumSlotsEl = document.getElementById('sauce-drum-slots');
-const aimTouchZone = document.getElementById('aim-touch-zone');
 const fireTouchBtn = document.getElementById('fire-touch-btn');
 
 const pauseScreen = document.getElementById('pause-screen');
@@ -364,6 +360,7 @@ let gameState = 'START';
 let currentWeaponIndex = 0;
 let fireCooldown = 0;
 let isFiring = false;
+let isTriggerButtonHeld = false;
 
 let score = 0;
 let lives = 3;
@@ -383,7 +380,7 @@ let unlockedRewardsThisRun = [];
 let rewardToastTimeout = null;
 
 // --- Variables Three.js ---
-let scene, camera, renderer;
+let scene, camera, renderer, raycaster;
 let weaponGroup, drumGroup, muzzleLight, muzzleFlashMesh;
 let fryerBubbles = [];
 let neonStrips = [];
@@ -391,8 +388,12 @@ let enemies = [];
 let projectiles = [];
 let particles = [];
 
+// Rotación actual y objetivo de la cámara (Interpolación fluida + Aim-Assist)
 let yaw = 0;
 let pitch = -0.04;
+let targetYaw = 0;
+let targetPitch = -0.04;
+
 let recoilOffset = 0;
 let targetDrumAngle = 0;
 let currentDrumAngle = 0;
@@ -496,13 +497,16 @@ function buildWeaponDrumUI() {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.dataset.idx = String(idx);
-        btn.className = `drum-slot px-2 py-1.5 rounded-lg border-2 flex items-center gap-1.5 bg-zinc-900/90 ${idx === currentWeaponIndex ? 'active border-white shadow-lg' : 'border-zinc-700 opacity-75'}`;
+        btn.className = `drum-slot px-2.5 py-2 rounded-lg border-2 flex items-center gap-1.5 bg-zinc-900/95 ${idx === currentWeaponIndex ? 'active border-white shadow-lg' : 'border-zinc-700 opacity-75'}`;
         btn.innerHTML = `
-            <span class="w-3 h-3 rounded-full border border-white shrink-0" style="background:${w.cssHex}"></span>
-            <span class="pixel-font text-[8px] text-white hidden sm:inline">${w.name}</span>
-            <span class="pixel-font text-[8px] text-yellow-300">[${w.key}]</span>
+            <span class="w-3.5 h-3.5 rounded-full border border-white shrink-0" style="background:${w.cssHex}"></span>
+            <span class="pixel-font text-[8px] text-white">${w.name}</span>
+            <span class="pixel-font text-[8px] text-yellow-300 hidden sm:inline">[${w.key}]</span>
         `;
-        btn.addEventListener('click', () => selectWeapon(idx));
+        btn.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            selectWeapon(idx);
+        });
         sauceDrumSlotsEl.appendChild(btn);
     });
 }
@@ -531,7 +535,10 @@ function selectWeapon(idx) {
 function rotateWeaponDrum(dir = 1) {
     selectWeapon(currentWeaponIndex + dir);
 }
-rotateDrumBtn.addEventListener('click', () => rotateWeaponDrum(1));
+rotateDrumBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    rotateWeaponDrum(1);
+});
 
 // --- Texturas Procedurales para el Spot 3D de Cocina S.N.A.X. ---
 function createCheckeredFloorTexture() {
@@ -612,6 +619,8 @@ function initThreeScene() {
     camera = new THREE.PerspectiveCamera(64, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.position.set(0, 2.35, 7.6);
     camera.rotation.order = 'YXZ';
+
+    raycaster = new THREE.Raycaster();
 
     renderer = new THREE.WebGLRenderer({ canvas: gameCanvas, antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -736,7 +745,6 @@ function initThreeScene() {
             oilPool.position.set(xPos, 1.82, zPos);
             scene.add(oilPool);
 
-            // Burbujas animadas de aceite caliente
             for (let b = 0; b < 4; b++) {
                 const bubble = new THREE.Mesh(
                     new THREE.SphereGeometry(0.11, 8, 8),
@@ -787,11 +795,9 @@ function buildFirstPersonBlaster() {
     const accentMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.4, roughness: 0.3 });
     const nozzleMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.85, roughness: 0.2 });
 
-    // Cuerpo Principal del Blaster
     const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 0.72), bodyMat);
     weaponGroup.add(receiver);
 
-    // Cañón Frontal Cromado
     const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.42, 16), nozzleMat);
     barrel.rotation.x = Math.PI / 2;
     barrel.position.set(0, 0.03, -0.52);
@@ -820,7 +826,6 @@ function buildFirstPersonBlaster() {
     });
     weaponGroup.add(drumGroup);
 
-    // Destello de Disparo
     muzzleFlashMesh = new THREE.Mesh(
         new THREE.SphereGeometry(0.14, 10, 10),
         new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0 })
@@ -877,7 +882,6 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
     const pupilMat = new THREE.MeshBasicMaterial({ color: 0x09090b });
     const browMat = new THREE.MeshBasicMaterial({ color: 0x09090b });
 
-    // Piernas articuladas con tenis
     function makeLeg(xOffset) {
         const pivot = new THREE.Group();
         pivot.position.set(xOffset, 0.65, 0);
@@ -900,9 +904,7 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
     root.add(leftLeg);
     root.add(rightLeg);
 
-    // Modelo Específico según el Producto de S.N.A.X.
     if (typeKey === 'wing') {
-        // Alita esculpida con hueso y glaseado crujiente
         const meatMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.45 });
         const meat = new THREE.Mesh(new THREE.SphereGeometry(0.64, 16, 14), meatMat);
         meat.scale.set(0.92, 1.22, 0.85);
@@ -920,7 +922,6 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
         knobR.position.x = 0.11;
         bodyGroup.add(knobL, knobR);
     } else if (typeKey === 'boneless') {
-        // Boneless crujiente con picos de empanizado dorado
         const crustMat = new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.65 });
         const core = new THREE.Mesh(new THREE.DodecahedronGeometry(0.68, 1), crustMat);
         core.castShadow = true;
@@ -934,7 +935,6 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
             bodyGroup.add(bump);
         }
     } else if (typeKey === 'fries') {
-        // Cajita roja de S.N.A.X. con bastones de papa dorada
         const boxMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
         const carton = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.92, 0.62), boxMat);
         carton.castShadow = true;
@@ -949,7 +949,6 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
             bodyGroup.add(stick);
         }
     } else {
-        // Papas Gajo curvas sazonadas
         const skinMat = new THREE.MeshStandardMaterial({ color: 0x9a3412, roughness: 0.55 });
         const pulpMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.4 });
         for (let w = -1; w <= 1; w++) {
@@ -964,7 +963,6 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
         }
     }
 
-    // Ojos Expresivos y Cejas Enojadas
     [-0.22, 0.22].forEach((xEye, idx) => {
         const eye = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 10), eyeWhiteMat);
         eye.position.set(xEye, 0.14, 0.54);
@@ -980,7 +978,6 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
         bodyGroup.add(brow);
     });
 
-    // Corona dorada si es Jefe de Oleada
     if (isBoss) {
         const crown = new THREE.Mesh(
             new THREE.CylinderGeometry(0.42, 0.34, 0.34, 8),
@@ -990,7 +987,6 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
         bodyGroup.add(crown);
     }
 
-    // Anillo Neón en el piso indicando la Salsa Debilidad (x2 Crítico)
     const ring = new THREE.Mesh(
         new THREE.RingGeometry(0.72, 0.94, 28),
         new THREE.MeshBasicMaterial({ color: weakWeapon.hex, side: THREE.DoubleSide })
@@ -999,7 +995,6 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
     ring.position.y = 0.03;
     root.add(ring);
 
-    // Barra de Vida Flotante 3D
     const tagLabel = isBoss ? `👑 JEFE • ${weakWeapon.name}` : weakWeapon.name;
     const hpTex = createEnemyHealthTexture(1.0, tagLabel, weakWeapon.cssHex);
     const hpSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: hpTex, transparent: true }));
@@ -1027,7 +1022,6 @@ const ENEMY_TYPES = [
 
 function spawnEnemy(forceBoss = false) {
     const type = ENEMY_TYPES[Math.floor(Math.random() * ENEMY_TYPES.length)];
-    // Si son papas o gajo, suelen pedir Ranch/Limón o BBQ; alitas/boneless cualquier salsa
     const weakWeapon = (type.key === 'fries' || type.key === 'wedges')
         ? (Math.random() < 0.65 ? WEAPONS[3] : WEAPONS[2])
         : WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
@@ -1050,9 +1044,62 @@ function spawnEnemy(forceBoss = false) {
         hp: maxHp,
         maxHp,
         speed,
-        walkPhase: Math.random() * Math.PI * 2,
-        hitFlash: 0
+        walkPhase: Math.random() * Math.PI * 2
     });
+}
+
+// --- Sistema de Apuntado Directo al Toque + Asistencia Magnética (Aim-Assist) ---
+function aimCameraAtScreenPoint(clientX, clientY, snapImmediately = false) {
+    if (!camera || !raycaster) return;
+
+    const ndcX = (clientX / window.innerWidth) * 2 - 1;
+    const ndcY = -(clientY / window.innerHeight) * 2 + 1;
+
+    // 1. Proyectar rayo 3D desde el punto exacto donde el usuario tocó/apuntó
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+    const ray = raycaster.ray;
+
+    // 2. Buscar si hay algún enemigo cerca del rayo para aplicar asistencia magnética (Aim-Assist)
+    let bestEnemy = null;
+    let bestScore = Infinity;
+
+    for (const enemy of enemies) {
+        const center = enemy.root.position.clone().add(new THREE.Vector3(0, enemy.isBoss ? 1.5 : 1.15, 0));
+        const distToRay = ray.distanceToPoint(center);
+        const magnetRadius = enemy.isBoss ? 2.4 : 1.85;
+
+        if (distToRay <= magnetRadius) {
+            const camDist = camera.position.distanceTo(center);
+            const weighted = distToRay * 10 + camDist * 0.15;
+            if (weighted < bestScore) {
+                bestScore = weighted;
+                bestEnemy = center;
+            }
+        }
+    }
+
+    let aimPoint;
+    if (bestEnemy) {
+        aimPoint = bestEnemy;
+        crosshairRingEl.classList.add('crosshair-locked');
+    } else {
+        crosshairRingEl.classList.remove('crosshair-locked');
+        // Intersección con un plano virtual a la altura del pasillo o distancia media
+        aimPoint = ray.origin.clone().addScaledVector(ray.direction, 22);
+    }
+
+    const dx = aimPoint.x - camera.position.x;
+    const dy = aimPoint.y - camera.position.y;
+    const dz = aimPoint.z - camera.position.z;
+    const horizDist = Math.sqrt(dx * dx + dz * dz) || 0.001;
+
+    targetYaw = Math.max(-0.85, Math.min(0.85, Math.atan2(-dx, -dz)));
+    targetPitch = Math.max(-0.42, Math.min(0.35, Math.atan2(dy, horizDist)));
+
+    if (snapImmediately) {
+        yaw = targetYaw;
+        pitch = targetPitch;
+    }
 }
 
 // --- Disparo y Partículas 3D ---
@@ -1181,14 +1228,18 @@ function animate(now) {
     const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
     lastFrameTime = now;
 
-    if (fireCooldown > 0) fireCooldown -= dt;
-    if (isFiring && fireCooldown <= 0) {
-        fireWeapon();
-    }
+    // Interpolación ultra rápida y suave hacia el punto apuntado
+    const aimLerp = Math.min(1, dt * 24);
+    yaw += (targetYaw - yaw) * aimLerp;
+    pitch += (targetPitch - pitch) * aimLerp;
 
-    // Cámara suave y retroceso del arma
     camera.rotation.y = yaw;
     camera.rotation.x = pitch;
+
+    if (fireCooldown > 0) fireCooldown -= dt;
+    if ((isFiring || isTriggerButtonHeld) && fireCooldown <= 0) {
+        fireWeapon();
+    }
 
     recoilOffset = Math.max(0, recoilOffset - dt * 1.1);
     weaponGroup.position.z = -1.18 + recoilOffset;
@@ -1238,7 +1289,7 @@ function animate(now) {
 
         for (let j = enemies.length - 1; j >= 0; j--) {
             const enemy = enemies[j];
-            const hitRadius = enemy.isBoss ? 1.55 : 1.05;
+            const hitRadius = enemy.isBoss ? 1.65 : 1.15;
             const enemyCenter = enemy.root.position.clone().add(new THREE.Vector3(0, 1.15, 0));
 
             if (proj.mesh.position.distanceTo(enemyCenter) <= hitRadius) {
@@ -1250,7 +1301,6 @@ function animate(now) {
 
                 applyDamageToEnemy(j, dmg, isCritical, proj.weapon.hex);
 
-                // Daño en área si es Mango Habanero
                 if (proj.weapon.splash > 0) {
                     for (let k = enemies.length - 1; k >= 0; k--) {
                         if (k === j || !enemies[k]) continue;
@@ -1275,18 +1325,15 @@ function animate(now) {
         const enemy = enemies[i];
         enemy.walkPhase += dt * (enemy.speed * 3.6);
 
-        // Movimiento hacia el mostrador (Z = 4.2) y leve zig-zag
         enemy.root.position.z += enemy.speed * dt;
         enemy.root.position.x += Math.sin(enemy.walkPhase * 0.35) * dt * 0.9;
         enemy.root.position.x = Math.max(-7.2, Math.min(7.2, enemy.root.position.x));
 
-        // Animación de zancadas alternas en las piernas y balanceo del torso
         enemy.leftLeg.rotation.x = Math.sin(enemy.walkPhase) * 0.68;
         enemy.rightLeg.rotation.x = -Math.sin(enemy.walkPhase) * 0.68;
         enemy.bodyGroup.position.y = 1.15 + Math.abs(Math.cos(enemy.walkPhase)) * 0.14;
         enemy.bodyGroup.rotation.z = Math.sin(enemy.walkPhase) * 0.08;
 
-        // ¿Llegó al mostrador?
         if (enemy.root.position.z >= 4.15) {
             scene.remove(enemy.root);
             enemies.splice(i, 1);
@@ -1328,7 +1375,7 @@ function applyDamageToEnemy(index, dmg, isCritical, hexColor) {
     if (!enemy) return;
 
     enemy.hp -= dmg;
-    enemy.root.position.z -= 0.28; // Empuje hacia atrás al recibir impacto
+    enemy.root.position.z -= 0.28;
 
     if (enemy.hp <= 0) {
         const mult = streak >= 6 ? 2 : 1;
@@ -1362,43 +1409,62 @@ function applyDamageToEnemy(index, dmg, isCritical, hexColor) {
     }
 }
 
-// --- Controles de Ratón, Teclado y Táctil Horizontal ---
-let lastAimX = null;
-let lastAimY = null;
+// --- Controles Unificados Pointer Events (Táctil Directo en Celular + Ratón en PC) ---
+let activeAimPointerId = null;
 
-function applyAimDelta(dx, dy, sensitivity = 0.0032) {
-    yaw -= dx * sensitivity;
-    pitch -= dy * sensitivity;
-    yaw = Math.max(-0.82, Math.min(0.82, yaw));
-    pitch = Math.max(-0.38, Math.min(0.32, pitch));
+function showTouchReticle(x, y) {
+    touchReticleEl.style.left = `${x}px`;
+    touchReticleEl.style.top = `${y}px`;
+    touchReticleEl.classList.remove('hidden');
 }
 
-gameCanvas.addEventListener('mousemove', (e) => {
+function hideTouchReticle() {
+    touchReticleEl.classList.add('hidden');
+}
+
+gameCanvas.addEventListener('pointerdown', (e) => {
     if (gameState !== 'PLAYING') return;
-    if (document.pointerLockElement === gameCanvas) {
-        applyAimDelta(e.movementX, e.movementY, 0.0024);
-    } else {
-        const nx = (e.clientX / window.innerWidth) * 2 - 1;
-        const ny = (e.clientY / window.innerHeight) * 2 - 1;
-        yaw = -nx * 0.72;
-        pitch = -ny * 0.30;
+    if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') {
+        if (e.button === 2) rotateWeaponDrum(1);
+        return;
+    }
+
+    activeAimPointerId = e.pointerId;
+    gameCanvas.setPointerCapture(e.pointerId);
+
+    // Apuntar al instante hacia donde tocó el dedo y disparar de inmediato
+    aimCameraAtScreenPoint(e.clientX, e.clientY, true);
+    isFiring = true;
+    fireWeapon();
+
+    if (e.pointerType !== 'mouse') {
+        showTouchReticle(e.clientX, e.clientY);
     }
 });
 
-gameCanvas.addEventListener('mousedown', (e) => {
+gameCanvas.addEventListener('pointermove', (e) => {
     if (gameState !== 'PLAYING') return;
-    if (e.button === 0) {
-        isFiring = true;
-        fireWeapon();
-    } else if (e.button === 2) {
-        rotateWeaponDrum(1);
+
+    if (e.pointerType === 'mouse') {
+        aimCameraAtScreenPoint(e.clientX, e.clientY, false);
+    } else if (e.pointerId === activeAimPointerId) {
+        aimCameraAtScreenPoint(e.clientX, e.clientY, false);
+        showTouchReticle(e.clientX, e.clientY);
     }
 });
 
-window.addEventListener('mouseup', () => {
-    isFiring = false;
-});
+function releaseAimPointer(e) {
+    if (e.pointerId === activeAimPointerId) {
+        activeAimPointerId = null;
+        isFiring = false;
+        hideTouchReticle();
+    } else if (e.pointerType === 'mouse') {
+        isFiring = false;
+    }
+}
 
+gameCanvas.addEventListener('pointerup', releaseAimPointer);
+gameCanvas.addEventListener('pointercancel', releaseAimPointer);
 gameCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
 window.addEventListener('wheel', (e) => {
@@ -1406,46 +1472,21 @@ window.addEventListener('wheel', (e) => {
     rotateWeaponDrum(e.deltaY > 0 ? 1 : -1);
 }, { passive: true });
 
-// Control Táctil Izquierdo (Apuntado Suave en Celular)
-aimTouchZone.addEventListener('touchstart', (e) => {
+// Gatillo Táctico Opcional (Multi-Touch: puedes mantenerlo mientras mueves otro dedo)
+fireTouchBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
     if (gameState !== 'PLAYING') return;
-    const t = e.changedTouches[0];
-    lastAimX = t.clientX;
-    lastAimY = t.clientY;
-}, { passive: true });
-
-aimTouchZone.addEventListener('touchmove', (e) => {
-    if (gameState !== 'PLAYING' || lastAimX === null) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - lastAimX;
-    const dy = t.clientY - lastAimY;
-    lastAimX = t.clientX;
-    lastAimY = t.clientY;
-    applyAimDelta(dx, dy, 0.0046);
-}, { passive: true });
-
-aimTouchZone.addEventListener('touchend', () => {
-    lastAimX = null;
-    lastAimY = null;
-}, { passive: true });
-
-// Botón Táctil Derecho de Disparo
-fireTouchBtn.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    if (gameState !== 'PLAYING') return;
-    isFiring = true;
+    isTriggerButtonHeld = true;
     fireWeapon();
-}, { passive: false });
+});
 
-fireTouchBtn.addEventListener('touchend', (e) => {
-    e.preventDefault();
-    isFiring = false;
-}, { passive: false });
+fireTouchBtn.addEventListener('pointerup', (e) => {
+    e.stopPropagation();
+    isTriggerButtonHeld = false;
+});
 
-fireTouchBtn.addEventListener('mousedown', () => {
-    if (gameState !== 'PLAYING') return;
-    isFiring = true;
-    fireWeapon();
+fireTouchBtn.addEventListener('pointercancel', () => {
+    isTriggerButtonHeld = false;
 });
 
 // Atajos de Teclado
@@ -1521,7 +1562,12 @@ async function startGame() {
     spawnTimer = 0.4;
     yaw = 0;
     pitch = -0.04;
+    targetYaw = 0;
+    targetPitch = -0.04;
     isFiring = false;
+    isTriggerButtonHeld = false;
+    activeAimPointerId = null;
+    hideTouchReticle();
     unlockedRewardsThisRun = [];
 
     if (rewardToastTimeout) clearTimeout(rewardToastTimeout);
@@ -1547,6 +1593,9 @@ function pauseGame() {
     if (gameState !== 'PLAYING') return;
     gameState = 'PAUSED';
     isFiring = false;
+    isTriggerButtonHeld = false;
+    activeAimPointerId = null;
+    hideTouchReticle();
     stopBGM();
     if (animFrameId) cancelAnimationFrame(animFrameId);
     pauseSummaryEl.textContent = `Oleada ${wave} • ${score} PTS`;
@@ -1569,6 +1618,9 @@ function exitToMainMenu() {
     if (animFrameId) cancelAnimationFrame(animFrameId);
     gameState = 'START';
     isFiring = false;
+    isTriggerButtonHeld = false;
+    activeAimPointerId = null;
+    hideTouchReticle();
     clearEntities();
 
     pauseScreen.classList.add('hidden');
@@ -1585,6 +1637,9 @@ function exitToMainMenu() {
 function triggerGameOver() {
     gameState = 'GAMEOVER';
     isFiring = false;
+    isTriggerButtonHeld = false;
+    activeAimPointerId = null;
+    hideTouchReticle();
     stopBGM();
     if (animFrameId) cancelAnimationFrame(animFrameId);
     rewardToast.classList.add('hidden');
