@@ -94,10 +94,10 @@
 
                 <!-- Mini Guía Táctica -->
                 <div class="bg-[#111522]/95 border border-slate-700/80 p-3 rounded-lg text-left text-xs sm:text-sm text-slate-300 space-y-1">
-                    <div class="pixel-font text-[8px] sm:text-[9px] text-sky-400 mb-1">🎯 CONTROLES HORIZONTALES:</div>
-                    <div>• <strong class="text-white">Izquierda:</strong> Arrastra para apuntar la mira 3D</div>
-                    <div>• <strong class="text-white">Derecha:</strong> Dispara ráfagas y rota tu tambor de salsas</div>
-                    <div>• <strong class="text-yellow-400">Tip Crítico:</strong> Usa la salsa del color del anillo (<span class="text-emerald-400 font-bold">DAÑO x2</span>)</div>
+                    <div class="pixel-font text-[8px] sm:text-[9px] text-sky-400 mb-1">🎯 CONTROL TÁCTIL DIRECTO:</div>
+                    <div>• <strong class="text-white">Toca o desliza sobre el enemigo:</strong> Apunta con imán y dispara al instante</div>
+                    <div>• <strong class="text-white">Tambor inferior:</strong> Cambia de salsa con un toque</div>
+                    <div>• <strong class="text-yellow-400">Tip Crítico:</strong> Salsa del color del anillo = <span class="text-emerald-400 font-bold">DAÑO x2</span></div>
                 </div>
             </div>
 
@@ -120,8 +120,8 @@
 
         <!-- ================= ARENA 3D EN PRIMERA PERSONA ================= -->
         <section id="game-arena" class="hidden relative w-full h-full overflow-hidden">
-            <!-- Canvas WebGL Three.js -->
-            <canvas id="game-canvas" class="block w-full h-full touch-none"></canvas>
+            <!-- Canvas WebGL Three.js (Toca o desliza aquí para apuntar y disparar directamente) -->
+            <canvas id="game-canvas" class="block w-full h-full touch-none cursor-crosshair"></canvas>
 
             <!-- Efecto CRT sutil -->
             <div class="crt-overlay pointer-events-none absolute inset-0 z-10"></div>
@@ -129,7 +129,7 @@
             <!-- Viñeta roja al recibir daño -->
             <div id="damage-vignette" class="pointer-events-none absolute inset-0 z-10 opacity-0 transition-opacity duration-200"></div>
 
-            <!-- HUD Superior Compacto (Optimizado para Horizontal) -->
+            <!-- HUD Superior Compacto -->
             <header id="game-hud" class="absolute top-0 left-0 right-0 z-20 px-3 py-2 flex items-center justify-between gap-2 bg-gradient-to-b from-black/85 via-black/45 to-transparent pointer-events-none">
                 <div class="flex items-center gap-2 pointer-events-auto">
                     <span class="pixel-font text-[10px] sm:text-xs text-yellow-400 drop-shadow">S.N.A.X. 3D</span>
@@ -160,15 +160,18 @@
                 </div>
             </header>
 
-            <!-- Mira Láser Central Dinámica -->
+            <!-- Mira Láser Central Dinámica (Se engancha magnéticamente al enemigo) -->
             <div id="crosshair" class="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex items-center justify-center transition-transform duration-75">
-                <div id="crosshair-ring" class="w-11 h-11 sm:w-12 sm:h-12 rounded-full border-2 border-red-500/90 flex items-center justify-center shadow-[0_0_12px_rgba(239,68,68,0.75)]">
-                    <div id="crosshair-dot" class="w-2 h-2 rounded-full bg-yellow-300"></div>
+                <div id="crosshair-ring" class="w-12 h-12 sm:w-14 sm:h-14 rounded-full border-2 border-red-500/90 flex items-center justify-center shadow-[0_0_12px_rgba(239,68,68,0.75)] transition-all duration-100">
+                    <div id="crosshair-dot" class="w-2.5 h-2.5 rounded-full bg-yellow-300"></div>
                 </div>
-                <span id="crosshair-sauce-tag" class="absolute -bottom-5 pixel-font text-[7px] bg-black/80 text-white px-1.5 py-0.5 rounded border border-white/30 whitespace-nowrap">
+                <span id="crosshair-sauce-tag" class="absolute -bottom-5 pixel-font text-[7px] bg-black/85 text-white px-1.5 py-0.5 rounded border border-white/30 whitespace-nowrap">
                     ATOMIC
                 </span>
             </div>
+
+            <!-- Anillo visual táctil donde presionas el dedo -->
+            <div id="touch-reticle" class="pointer-events-none hidden fixed -translate-x-1/2 -translate-y-1/2 z-20 w-14 h-14 rounded-full border-2 border-yellow-300/80 bg-yellow-400/10 shadow-[0_0_16px_rgba(250,204,21,0.6)]"></div>
 
             <!-- Popups Flotantes de Impacto / Crítico / Oleada -->
             <div id="popup-container" class="pointer-events-none absolute inset-0 z-20 overflow-hidden"></div>
@@ -184,28 +187,25 @@
                 </div>
             </div>
 
-            <!-- Zona Izquierda Táctil: Pad de Apuntado Suave -->
-            <div id="aim-touch-zone" class="md:hidden absolute left-0 top-12 bottom-0 w-1/2 z-20 flex items-end justify-start p-3">
-                <div class="bg-black/45 border border-white/15 rounded-full px-3 py-1.5 pointer-events-none flex items-center gap-1.5">
-                    <span class="w-2 h-2 rounded-full bg-sky-400 animate-ping"></span>
-                    <span class="pixel-font text-[7px] text-slate-300">DESLIZA PARA APUNTAR</span>
+            <!-- Barra Inferior Táctica: Selector de Tambor de Salsas + Gatillo de Ráfaga -->
+            <div id="bottom-controls-bar" class="absolute bottom-2.5 left-3 right-3 z-20 flex items-end justify-between gap-2 pointer-events-none">
+                
+                <!-- Selector de Tambor de Salsas -->
+                <div id="weapon-hud" class="pointer-events-auto flex items-center gap-1.5 bg-black/85 backdrop-blur-sm border-2 border-zinc-700 rounded-xl p-1.5 shadow-xl">
+                    <button id="rotate-drum-btn" type="button" title="Rotar Tambor (TAB / Scroll)" class="bg-zinc-800 hover:bg-zinc-700 active:scale-95 border border-yellow-400/80 text-yellow-300 pixel-font text-[8px] px-2.5 py-2 rounded-lg flex flex-col items-center justify-center shrink-0">
+                        <span class="text-xs leading-none mb-0.5">↻</span>
+                        <span>ROTAR</span>
+                    </button>
+                    <div id="sauce-drum-slots" class="flex items-center gap-1.5"></div>
                 </div>
-            </div>
 
-            <!-- Selector Inferior de Tambor de Salsas + Controles de Disparo -->
-            <div id="weapon-hud" class="absolute bottom-2.5 left-1/2 -translate-x-1/2 md:left-4 md:translate-x-0 z-20 flex items-center gap-2 bg-black/80 backdrop-blur-sm border-2 border-zinc-700 rounded-xl p-1.5 shadow-xl">
-                <button id="rotate-drum-btn" type="button" title="Rotar Tambor (TAB / Scroll)" class="bg-zinc-800 hover:bg-zinc-700 active:scale-95 border border-yellow-400/80 text-yellow-300 pixel-font text-[8px] px-2.5 py-2 rounded-lg flex flex-col items-center justify-center shrink-0">
-                    <span class="text-xs leading-none mb-0.5">↻</span>
-                    <span>ROTAR</span>
-                </button>
-                <div id="sauce-drum-slots" class="flex items-center gap-1.5"></div>
-            </div>
-
-            <!-- Botón de Fuego Táctico Derecho (Ideal para Celular Horizontal) -->
-            <div class="absolute bottom-3 right-3 z-20 flex items-center gap-2.5">
-                <button id="fire-touch-btn" type="button" class="w-20 h-20 sm:w-22 sm:h-22 rounded-full bg-gradient-to-b from-red-500 to-red-700 active:from-yellow-400 active:to-orange-500 border-4 border-yellow-300 shadow-[0_0_24px_rgba(239,68,68,0.85)] flex flex-col items-center justify-center text-white active:text-black active:scale-95 transition touch-none">
-                    <span class="pixel-font text-[9px] sm:text-[10px] font-bold leading-tight">FUEGO</span>
-                    <span class="text-[10px] opacity-85">[CLICK]</span>
+                <!-- Gatillo Compacto de Ráfaga Fija (Complementario al Toque Directo) -->
+                <button id="fire-touch-btn" type="button" class="pointer-events-auto fire-trigger-pill px-4 py-3 rounded-xl bg-gradient-to-r from-red-600 to-orange-600 active:from-yellow-400 active:to-amber-500 border-2 border-yellow-300 shadow-[0_0_20px_rgba(239,68,68,0.75)] flex items-center gap-2 text-white active:text-black active:scale-95 transition touch-none">
+                    <span class="text-base leading-none">🔥</span>
+                    <div class="text-left">
+                        <span class="pixel-font text-[9px] sm:text-[10px] font-bold block leading-none">RÁFAGA</span>
+                        <span class="text-[10px] opacity-85 block leading-none mt-0.5">MANTENER</span>
+                    </div>
                 </button>
             </div>
         </section>
@@ -288,7 +288,7 @@
         <div id="guide-modal" class="fixed inset-0 bg-black/95 hidden items-center justify-center p-3 z-50 text-center overflow-y-auto">
             <div class="bg-[#0f1320] border-4 border-sky-400 p-4 rounded-xl w-full max-w-xl shadow-[0_0_25px_rgba(56,189,248,0.35)]">
                 <h2 class="pixel-font text-xs sm:text-sm text-sky-400 mb-1">🔫 ARSENAL DE SALSAS S.N.A.X.</h2>
-                <p class="text-gray-300 text-xs sm:text-sm mb-2.5">Cada salsa tiene un comportamiento balístico único. ¡Usa la del color del enemigo para daño crítico x2!</p>
+                <p class="text-gray-300 text-xs sm:text-sm mb-2.5">Toca directamente a los enemigos para apuntar con asistencia magnética y disparar al instante:</p>
                 <div id="arsenal-guide-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-left mb-3"></div>
                 <button id="close-guide-btn" type="button" class="w-full btn-arcade bg-red-600 hover:bg-red-500 text-white py-2 rounded text-xs border-2 border-yellow-400">
                     ENTENDIDO
