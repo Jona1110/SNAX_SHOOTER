@@ -1,0 +1,120 @@
+/* ============================================================================
+   S.N.A.X. ARCADE: SAUCE BLASTER 3D - ESTILOS HORIZONTALES Y RETRO ARCADE
+   ============================================================================ */
+
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: 'VT323', monospace;
+    background-color: #05070c;
+    color: #f3f4f6;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+}
+
+.pixel-font {
+    font-family: 'Press Start 2P', cursive;
+}
+
+.title-pixel-shadow {
+    text-shadow:
+        3px 3px 0px #991b1b,
+        6px 6px 0px rgba(0, 0, 0, 0.9);
+}
+
+/* Detección automática de celular en vertical (Portrait) */
+@media screen and (max-width: 900px) and (orientation: portrait) {
+    #rotate-overlay {
+        display: flex !important;
+    }
+}
+
+.phone-rotate-icon {
+    animation: rotatePhoneAnim 1.8s ease-in-out infinite;
+}
+
+@keyframes rotatePhoneAnim {
+    0%, 20% {
+        transform: rotate(0deg);
+    }
+    55%, 80% {
+        transform: rotate(-90deg);
+    }
+    100% {
+        transform: rotate(0deg);
+    }
+}
+
+/* Efecto CRT sutil sobre el viewport 3D */
+.crt-overlay {
+    background:
+        linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.16) 50%),
+        linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.015), rgba(0, 0, 255, 0.03));
+    background-size: 100% 3px, 5px 100%;
+}
+
+/* Viñeta de daño */
+#damage-vignette {
+    background: radial-gradient(circle, rgba(220, 38, 38, 0) 52%, rgba(220, 38, 38, 0.72) 100%);
+}
+
+/* Botones Arcade 3D */
+.btn-arcade {
+    font-family: 'Press Start 2P', cursive;
+    transition: transform 0.08s ease, background-color 0.1s ease;
+    box-shadow: 0 4px 0 #991b1b;
+}
+
+.btn-arcade:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 #991b1b;
+}
+
+.btn-arcade-blue {
+    box-shadow: 0 4px 0 #1e3a8a;
+}
+
+.btn-arcade-blue:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 #1e3a8a;
+}
+
+.btn-arcade-green {
+    box-shadow: 0 4px 0 #065f46;
+}
+
+.btn-arcade-green:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 #065f46;
+}
+
+.btn-arcade-amber {
+    box-shadow: 0 4px 0 #92400e;
+}
+
+.btn-arcade-amber:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 #92400e;
+}
+
+/* Slots del Tambor Giratorio */
+.drum-slot {
+    transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.drum-slot.active {
+    transform: translateY(-4px) scale(1.06);
+}
+
+/* Animación de pulso en la mira */
+.crosshair-fire {
+    transform: translate(-50%, -50%) scale(1.28) !important;
+}
