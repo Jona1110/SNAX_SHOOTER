@@ -1,7 +1,7 @@
 // ============================================================================
-// S.N.A.X. ARCADE: SAUCE BLASTER 3D (PURO PULSO + RETROCESO REAL DE ARMAS)
-// Sin auto-aim ni imán de objetivos. El retroceso real eleva la mira y el
-// cañón en cada disparo, exigiendo control de ráfaga y puntería precisa.
+// S.N.A.X. ARCADE: SAUCE BLASTER 3D (PUNTERÍA DIRECTA + HORDA DESAFIANTE)
+// Sin auto-aim ni retroceso en la mira. Enemigos con mayor resistencia y
+// velocidad creciente para exigir rotación rápida de salsas y precisión.
 // ============================================================================
 
 const DEFAULT_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbylvNCwAIEdpA9eZVyysRwldPQSklgHcyywPIHVqB6qkPGu5IlngXCgEqCtazrA5FP3/exec";
@@ -181,7 +181,7 @@ function playSound(type) {
     }
 }
 
-// --- Arsenal de Salsas S.N.A.X. (Con Retroceso Real por Arma) ---
+// --- Arsenal de Salsas S.N.A.X. (Mira 100% estable sin retroceso) ---
 const WEAPONS = [
     {
         id: 'atomic',
@@ -189,16 +189,14 @@ const WEAPONS = [
         key: '1',
         hex: 0xef4444,
         cssHex: '#ef4444',
-        cooldown: 0.15,
+        cooldown: 0.16,
         speed: 62,
-        damage: 30,
-        spread: 0.016,
-        recoilKickY: 16,      // Píxeles que sube la mira por disparo
-        recoilShakeX: 9,      // Desviación horizontal aleatoria
+        damage: 28,
+        spread: 0.012,
         count: 1,
         splash: 0,
         sound: 'shoot_atomic',
-        desc: 'Ráfaga rápida; si dejas presionado sube bastante la mira.'
+        desc: 'Ráfaga continua rápida para derretir objetivos veloces.'
     },
     {
         id: 'mango',
@@ -206,16 +204,14 @@ const WEAPONS = [
         key: '2',
         hex: 0xf97316,
         cssHex: '#f97316',
-        cooldown: 0.34,
+        cooldown: 0.36,
         speed: 50,
-        damage: 46,
-        spread: 0.010,
-        recoilKickY: 28,      // Patada fuerte por explosión
-        recoilShakeX: 12,
+        damage: 44,
+        spread: 0.008,
         count: 1,
         splash: 3.6,
         sound: 'shoot_mango',
-        desc: 'Proyectil pesado explosivo con retroceso alto.'
+        desc: 'Proyectil explosivo pesado con daño de área.'
     },
     {
         id: 'bbq',
@@ -223,16 +219,14 @@ const WEAPONS = [
         key: '3',
         hex: 0xd97706,
         cssHex: '#d97706',
-        cooldown: 0.32,
+        cooldown: 0.34,
         speed: 54,
-        damage: 26,
-        spread: 0.095,
-        recoilKickY: 34,      // Patada tipo escopeta
-        recoilShakeX: 16,
+        damage: 24,
+        spread: 0.085,
         count: 3,
         splash: 0,
         sound: 'shoot_bbq',
-        desc: 'Escopeta de 3 chorros; patada brutal, ideal de cerca.'
+        desc: 'Escopeta de 3 chorros devastadora a corta distancia.'
     },
     {
         id: 'ranch',
@@ -240,16 +234,14 @@ const WEAPONS = [
         key: '4',
         hex: 0x22c55e,
         cssHex: '#22c55e',
-        cooldown: 0.24,
-        speed: 76,
-        damage: 52,
-        spread: 0.005,
-        recoilKickY: 12,      // La más precisa pero exige puntería exacta
-        recoilShakeX: 5,
+        cooldown: 0.25,
+        speed: 78,
+        damage: 50,
+        spread: 0.003,
         count: 1,
         splash: 0,
         sound: 'shoot_ranch',
-        desc: 'Ráfaga precisa de bajo retroceso; exige tiro limpio.'
+        desc: 'Disparo láser preciso de alta velocidad y alto impacto.'
     }
 ];
 
@@ -376,7 +368,7 @@ let shotsFired = 0;
 let shotsHit = 0;
 let wave = 1;
 let enemiesSpawnedInWave = 0;
-let enemiesPerWave = 7;
+let enemiesPerWave = 9;
 let spawnTimer = 0;
 
 let currentPlayerName = (localStorage.getItem('snax_player_name') || '').trim();
@@ -393,18 +385,11 @@ let enemies = [];
 let projectiles = [];
 let particles = [];
 
-// Posición base del dedo/cursor + desplazamiento real por retroceso (recoil)
-let baseAimX = window.innerWidth * 0.5;
-let baseAimY = window.innerHeight * 0.45;
-let recoilOffsetX = 0;
-let recoilOffsetY = 0;
-
 let aimWorldPoint = new THREE.Vector3(0, 1.5, -12);
 let camPanYaw = 0;
 let camPanPitch = -0.10;
 
 let weaponKickZ = 0;
-let weaponKickPitch = 0;
 let targetDrumAngle = 0;
 let currentDrumAngle = 0;
 let animFrameId = null;
@@ -500,7 +485,7 @@ function buildCatalogModals() {
 }
 buildCatalogModals();
 
-// --- Tambor Giratorio de Salsas (Manual) ---
+// --- Tambor Giratorio de Salsas ---
 function buildWeaponDrumUI() {
     sauceDrumSlotsEl.innerHTML = '';
     WEAPONS.forEach((w, idx) => {
@@ -1011,12 +996,12 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
     };
 }
 
-// --- Generación y Comportamiento de Enemigos ---
+// --- Generación y Comportamiento de Enemigos (Más Vida y Mayor Velocidad) ---
 const ENEMY_TYPES = [
-    { key: 'wing', name: 'ALITA REBELDE', baseHp: 60, baseSpeed: 3.1, points: 35 },
-    { key: 'boneless', name: 'BONELESS RUDOS', baseHp: 82, baseSpeed: 2.6, points: 45 },
-    { key: 'fries', name: 'ESCUADRÓN PAPAS', baseHp: 50, baseSpeed: 3.7, points: 30 },
-    { key: 'wedges', name: 'PAPAS GAJO', baseHp: 72, baseSpeed: 3.2, points: 40 }
+    { key: 'wing', name: 'ALITA REBELDE', baseHp: 110, baseSpeed: 4.3, points: 45 },
+    { key: 'boneless', name: 'BONELESS RUDOS', baseHp: 150, baseSpeed: 3.7, points: 55 },
+    { key: 'fries', name: 'ESCUADRÓN PAPAS', baseHp: 90, baseSpeed: 5.2, points: 40 },
+    { key: 'wedges', name: 'PAPAS GAJO', baseHp: 130, baseSpeed: 4.5, points: 50 }
 ];
 
 function spawnEnemy(forceBoss = false) {
@@ -1025,9 +1010,9 @@ function spawnEnemy(forceBoss = false) {
         ? (Math.random() < 0.65 ? WEAPONS[3] : WEAPONS[2])
         : WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
 
-    const waveScale = 1 + (wave - 1) * 0.16;
-    const maxHp = Math.round(type.baseHp * waveScale * (forceBoss ? 3.2 : 1));
-    const speed = type.baseSpeed * (1 + (wave - 1) * 0.06) * (forceBoss ? 0.72 : 1);
+    const waveScale = 1 + (wave - 1) * 0.22;
+    const maxHp = Math.round(type.baseHp * waveScale * (forceBoss ? 3.5 : 1));
+    const speed = type.baseSpeed * (1 + (wave - 1) * 0.08) * (forceBoss ? 0.78 : 1);
 
     const meshParts = createEnemyMesh(type.key, weakWeapon, forceBoss);
     const laneX = (Math.random() - 0.5) * 11.4;
@@ -1047,24 +1032,22 @@ function spawnEnemy(forceBoss = false) {
     });
 }
 
-// --- Apuntado Puro (Sin Aim-Assist) + Retroceso Real ---
-function recomputeAimPoint() {
-    const finalScreenX = Math.max(8, Math.min(window.innerWidth - 8, baseAimX + recoilOffsetX));
-    const finalScreenY = Math.max(8, Math.min(window.innerHeight - 8, baseAimY - recoilOffsetY));
+// --- Apuntado Directo Sin Auto-Aim ni Retroceso ---
+function updateAimFromScreen(clientX, clientY) {
+    const screenX = Math.max(8, Math.min(window.innerWidth - 8, clientX));
+    const screenY = Math.max(8, Math.min(window.innerHeight - 8, clientY));
 
-    // Posicionar la mira visual exactamente con el retroceso aplicado
-    crosshairEl.style.left = `${finalScreenX}px`;
-    crosshairEl.style.top = `${finalScreenY}px`;
+    crosshairEl.style.left = `${screenX}px`;
+    crosshairEl.style.top = `${screenY}px`;
 
-    const normX = (finalScreenX / window.innerWidth) * 2 - 1;
-    const normY = -(finalScreenY / window.innerHeight) * 2 + 1;
+    const normX = (screenX / window.innerWidth) * 2 - 1;
+    const normY = -(screenY / window.innerHeight) * 2 + 1;
 
     camPanYaw = -normX * 0.065;
     camPanPitch = -0.10 + normY * 0.04;
 
     if (!camera || !raycaster) return;
 
-    // Raycast directo desde la mira hacia el mundo 3D (sin imán ni bloqueo)
     raycaster.setFromCamera(new THREE.Vector2(normX, normY), camera);
     const ray = raycaster.ray;
 
@@ -1077,32 +1060,20 @@ function recomputeAimPoint() {
     }
 }
 
-function updateAimFromScreen(clientX, clientY) {
-    baseAimX = clientX;
-    baseAimY = clientY;
-    recomputeAimPoint();
-}
-
-// --- Disparo 3D con Retroceso Real por Arma ---
+// --- Disparo 3D ---
 function fireWeapon() {
     if (gameState !== 'PLAYING' || fireCooldown > 0) return;
     const w = WEAPONS[currentWeaponIndex];
     fireCooldown = w.cooldown;
     shotsFired++;
 
-    // Patada física en el modelo 3D del Blaster
-    weaponKickZ = 0.22;
-    weaponKickPitch = 0.14;
-
-    // Patada real acumulativa en la mira (sube y se desvía ligeramente)
-    recoilOffsetY = Math.min(145, recoilOffsetY + w.recoilKickY);
-    recoilOffsetX = Math.max(-75, Math.min(75, recoilOffsetX + (Math.random() - 0.5) * 2 * w.recoilShakeX));
-    recomputeAimPoint();
+    // Vibración mínima de impacto en el cañón (sin mover la mira)
+    weaponKickZ = 0.14;
 
     muzzleFlashMesh.material.opacity = 0.95;
     muzzleLight.intensity = 3.2;
     crosshairEl.classList.add('crosshair-fire');
-    setTimeout(() => crosshairEl.classList.remove('crosshair-fire'), 90);
+    setTimeout(() => crosshairEl.classList.remove('crosshair-fire'), 80);
 
     playSound(w.sound);
 
@@ -1217,30 +1188,19 @@ function animate(now) {
     const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
     lastFrameTime = now;
 
-    // Recuperación progresiva del retroceso cuando dejas de disparar
-    if (recoilOffsetY > 0 || Math.abs(recoilOffsetX) > 0.1) {
-        const recoveryRate = isFiring ? 32 : 85;
-        recoilOffsetY = Math.max(0, recoilOffsetY - recoveryRate * dt);
-        recoilOffsetX *= Math.pow(0.08, dt);
-        recomputeAimPoint();
-    }
-
     camera.rotation.y += (camPanYaw - camera.rotation.y) * Math.min(1, dt * 8);
     camera.rotation.x += (camPanPitch - camera.rotation.x) * Math.min(1, dt * 8);
     camera.updateMatrixWorld();
 
-    // Orientar cañón 3D + retroceso visual de elevación
     weaponGroup.lookAt(aimWorldPoint);
     weaponGroup.rotateY(Math.PI);
-    weaponGroup.rotateX(weaponKickPitch);
 
     if (fireCooldown > 0) fireCooldown -= dt;
     if (isFiring && fireCooldown <= 0) {
         fireWeapon();
     }
 
-    weaponKickZ = Math.max(0, weaponKickZ - dt * 1.2);
-    weaponKickPitch = Math.max(0, weaponKickPitch - dt * 0.9);
+    weaponKickZ = Math.max(0, weaponKickZ - dt * 1.4);
     weaponGroup.position.z = -1.25 + weaponKickZ;
     weaponGroup.position.y = -0.62 + Math.sin(now * 0.008) * 0.010;
 
@@ -1260,25 +1220,25 @@ function animate(now) {
         b.scale.set(s, s, s);
     }
 
-    // Control de Oleadas
+    // Control de Oleadas Intensas
     if (enemiesSpawnedInWave < enemiesPerWave) {
         spawnTimer -= dt;
         if (spawnTimer <= 0) {
             const isLastBoss = enemiesSpawnedInWave === enemiesPerWave - 1;
             spawnEnemy(isLastBoss);
             enemiesSpawnedInWave++;
-            spawnTimer = Math.max(0.75, 2.0 - wave * 0.08);
+            spawnTimer = Math.max(0.55, 1.55 - wave * 0.09);
         }
     } else if (enemies.length === 0) {
         wave++;
         enemiesSpawnedInWave = 0;
-        enemiesPerWave = Math.min(18, 6 + wave * 2);
-        spawnTimer = 1.0;
+        enemiesPerWave = Math.min(24, 7 + wave * 2);
+        spawnTimer = 0.85;
         createPopup(`🔥 ¡OLEADA ${wave}!`, '#38bdf8');
         updateHUD();
     }
 
-    // Actualizar Proyectiles (Hitbox estricto al cuerpo del enemigo)
+    // Actualizar Proyectiles
     for (let i = projectiles.length - 1; i >= 0; i--) {
         const proj = projectiles[i];
         proj.life -= dt;
@@ -1319,19 +1279,19 @@ function animate(now) {
         }
     }
 
-    // Actualizar Enemigos
+    // Actualizar Enemigos (Avance rápido y evasivo)
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
-        enemy.walkPhase += dt * (enemy.speed * 3.6);
+        enemy.walkPhase += dt * (enemy.speed * 3.8);
 
         enemy.root.position.z += enemy.speed * dt;
-        enemy.root.position.x += Math.sin(enemy.walkPhase * 0.35) * dt * 0.9;
+        enemy.root.position.x += Math.sin(enemy.walkPhase * 0.42) * dt * 1.45;
         enemy.root.position.x = Math.max(-7.2, Math.min(7.2, enemy.root.position.x));
 
-        enemy.leftLeg.rotation.x = Math.sin(enemy.walkPhase) * 0.68;
-        enemy.rightLeg.rotation.x = -Math.sin(enemy.walkPhase) * 0.68;
-        enemy.bodyGroup.position.y = 1.15 + Math.abs(Math.cos(enemy.walkPhase)) * 0.14;
-        enemy.bodyGroup.rotation.z = Math.sin(enemy.walkPhase) * 0.08;
+        enemy.leftLeg.rotation.x = Math.sin(enemy.walkPhase) * 0.72;
+        enemy.rightLeg.rotation.x = -Math.sin(enemy.walkPhase) * 0.72;
+        enemy.bodyGroup.position.y = 1.15 + Math.abs(Math.cos(enemy.walkPhase)) * 0.16;
+        enemy.bodyGroup.rotation.z = Math.sin(enemy.walkPhase) * 0.09;
 
         if (enemy.root.position.z >= 4.15) {
             scene.remove(enemy.root);
@@ -1374,12 +1334,12 @@ function applyDamageToEnemy(index, dmg, isCritical, hexColor) {
     if (!enemy) return;
 
     enemy.hp -= dmg;
-    enemy.root.position.z -= 0.25;
+    enemy.root.position.z -= 0.16;
 
     if (enemy.hp <= 0) {
         const mult = streak >= 6 ? 2 : 1;
         const bossMult = enemy.isBoss ? 3 : 1;
-        const critBonus = isCritical ? 15 : 0;
+        const critBonus = isCritical ? 20 : 0;
         const earned = (enemy.type.points * bossMult + critBonus) * mult;
 
         score += earned;
@@ -1408,7 +1368,7 @@ function applyDamageToEnemy(index, dmg, isCritical, hexColor) {
     }
 }
 
-// --- Controles Directos Estilo Pistola Arcade (Puro Pulso) ---
+// --- Controles Directos Estilo Pistola Arcade ---
 let activeAimPointerId = null;
 
 gameCanvas.addEventListener('pointerdown', (e) => {
@@ -1520,16 +1480,13 @@ async function startGame() {
     shotsHit = 0;
     wave = 1;
     enemiesSpawnedInWave = 0;
-    enemiesPerWave = 7;
-    spawnTimer = 0.4;
+    enemiesPerWave = 9;
+    spawnTimer = 0.35;
     camPanYaw = 0;
     camPanPitch = -0.10;
     camera.rotation.y = 0;
     camera.rotation.x = -0.10;
-    recoilOffsetX = 0;
-    recoilOffsetY = 0;
     weaponKickZ = 0;
-    weaponKickPitch = 0;
     isFiring = false;
     activeAimPointerId = null;
     unlockedRewardsThisRun = [];
