@@ -1,7 +1,7 @@
 // ============================================================================
-// S.N.A.X. ARCADE: SAUCE BLASTER 3D (FPS HORIZONTAL EN COCINA 3D)
-// Apuntado directo al toque con asistencia magnética (Aim-Assist), auto-fuego
-// al mantener presionado/deslizar y gatillo táctico multi-touch para celular.
+// S.N.A.X. ARCADE: SAUCE BLASTER 3D (PURO PULSO + RETROCESO REAL DE ARMAS)
+// Sin auto-aim ni imán de objetivos. El retroceso real eleva la mira y el
+// cañón en cada disparo, exigiendo control de ráfaga y puntería precisa.
 // ============================================================================
 
 const DEFAULT_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbylvNCwAIEdpA9eZVyysRwldPQSklgHcyywPIHVqB6qkPGu5IlngXCgEqCtazrA5FP3/exec";
@@ -181,7 +181,7 @@ function playSound(type) {
     }
 }
 
-// --- Arsenal de Salsas S.N.A.X. ---
+// --- Arsenal de Salsas S.N.A.X. (Con Retroceso Real por Arma) ---
 const WEAPONS = [
     {
         id: 'atomic',
@@ -190,13 +190,15 @@ const WEAPONS = [
         hex: 0xef4444,
         cssHex: '#ef4444',
         cooldown: 0.15,
-        speed: 52,
-        damage: 28,
-        spread: 0.012,
+        speed: 62,
+        damage: 30,
+        spread: 0.016,
+        recoilKickY: 16,      // Píxeles que sube la mira por disparo
+        recoilShakeX: 9,      // Desviación horizontal aleatoria
         count: 1,
         splash: 0,
         sound: 'shoot_atomic',
-        desc: 'Disparo rápido de fuego directo y cadencia alta.'
+        desc: 'Ráfaga rápida; si dejas presionado sube bastante la mira.'
     },
     {
         id: 'mango',
@@ -205,13 +207,15 @@ const WEAPONS = [
         hex: 0xf97316,
         cssHex: '#f97316',
         cooldown: 0.34,
-        speed: 42,
-        damage: 44,
-        spread: 0.008,
+        speed: 50,
+        damage: 46,
+        spread: 0.010,
+        recoilKickY: 28,      // Patada fuerte por explosión
+        recoilShakeX: 12,
         count: 1,
-        splash: 3.8,
+        splash: 3.6,
         sound: 'shoot_mango',
-        desc: 'Proyectil explosivo con daño de área para grupos.'
+        desc: 'Proyectil pesado explosivo con retroceso alto.'
     },
     {
         id: 'bbq',
@@ -220,13 +224,15 @@ const WEAPONS = [
         hex: 0xd97706,
         cssHex: '#d97706',
         cooldown: 0.32,
-        speed: 46,
-        damage: 25,
-        spread: 0.10,
+        speed: 54,
+        damage: 26,
+        spread: 0.095,
+        recoilKickY: 34,      // Patada tipo escopeta
+        recoilShakeX: 16,
         count: 3,
         splash: 0,
         sound: 'shoot_bbq',
-        desc: 'Escopeta de 3 chorros en abanico para corta distancia.'
+        desc: 'Escopeta de 3 chorros; patada brutal, ideal de cerca.'
     },
     {
         id: 'ranch',
@@ -235,13 +241,15 @@ const WEAPONS = [
         hex: 0x22c55e,
         cssHex: '#22c55e',
         cooldown: 0.24,
-        speed: 66,
-        damage: 50,
-        spread: 0.003,
+        speed: 76,
+        damage: 52,
+        spread: 0.005,
+        recoilKickY: 12,      // La más precisa pero exige puntería exacta
+        recoilShakeX: 5,
         count: 1,
         splash: 0,
         sound: 'shoot_ranch',
-        desc: 'Ráfaga ultra veloz de alto impacto para Papas y Gajo.'
+        desc: 'Ráfaga precisa de bajo retroceso; exige tiro limpio.'
     }
 ];
 
@@ -310,12 +318,10 @@ const crosshairEl = document.getElementById('crosshair');
 const crosshairRingEl = document.getElementById('crosshair-ring');
 const crosshairDotEl = document.getElementById('crosshair-dot');
 const crosshairSauceTagEl = document.getElementById('crosshair-sauce-tag');
-const touchReticleEl = document.getElementById('touch-reticle');
 const popupContainer = document.getElementById('popup-container');
 
 const rotateDrumBtn = document.getElementById('rotate-drum-btn');
 const sauceDrumSlotsEl = document.getElementById('sauce-drum-slots');
-const fireTouchBtn = document.getElementById('fire-touch-btn');
 
 const pauseScreen = document.getElementById('pause-screen');
 const pauseSummaryEl = document.getElementById('pause-summary');
@@ -360,7 +366,6 @@ let gameState = 'START';
 let currentWeaponIndex = 0;
 let fireCooldown = 0;
 let isFiring = false;
-let isTriggerButtonHeld = false;
 
 let score = 0;
 let lives = 3;
@@ -388,13 +393,18 @@ let enemies = [];
 let projectiles = [];
 let particles = [];
 
-// Rotación actual y objetivo de la cámara (Interpolación fluida + Aim-Assist)
-let yaw = 0;
-let pitch = -0.04;
-let targetYaw = 0;
-let targetPitch = -0.04;
+// Posición base del dedo/cursor + desplazamiento real por retroceso (recoil)
+let baseAimX = window.innerWidth * 0.5;
+let baseAimY = window.innerHeight * 0.45;
+let recoilOffsetX = 0;
+let recoilOffsetY = 0;
 
-let recoilOffset = 0;
+let aimWorldPoint = new THREE.Vector3(0, 1.5, -12);
+let camPanYaw = 0;
+let camPanPitch = -0.10;
+
+let weaponKickZ = 0;
+let weaponKickPitch = 0;
 let targetDrumAngle = 0;
 let currentDrumAngle = 0;
 let animFrameId = null;
@@ -490,7 +500,7 @@ function buildCatalogModals() {
 }
 buildCatalogModals();
 
-// --- Tambor Giratorio de Salsas (UI + 3D) ---
+// --- Tambor Giratorio de Salsas (Manual) ---
 function buildWeaponDrumUI() {
     sauceDrumSlotsEl.innerHTML = '';
     WEAPONS.forEach((w, idx) => {
@@ -520,7 +530,7 @@ function selectWeapon(idx) {
     }
     const w = WEAPONS[currentWeaponIndex];
     crosshairRingEl.style.borderColor = w.cssHex;
-    crosshairRingEl.style.boxShadow = `0 0 14px ${w.cssHex}`;
+    crosshairRingEl.style.boxShadow = `0 0 12px ${w.cssHex}`;
     crosshairDotEl.style.backgroundColor = w.cssHex;
     crosshairSauceTagEl.textContent = w.name;
     crosshairSauceTagEl.style.borderColor = w.cssHex;
@@ -608,17 +618,18 @@ function createSnaxSignTexture() {
     return new THREE.CanvasTexture(c);
 }
 
-// --- Inicialización de Escena 3D (Spot de Cocina Detallado) ---
+// --- Inicialización de Escena 3D ---
 function initThreeScene() {
     if (renderer) return;
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x090c14);
-    scene.fog = new THREE.FogExp2(0x090c14, 0.022);
+    scene.fog = new THREE.FogExp2(0x090c14, 0.020);
 
-    camera = new THREE.PerspectiveCamera(64, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(0, 2.35, 7.6);
+    camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.set(0, 3.35, 8.6);
     camera.rotation.order = 'YXZ';
+    camera.rotation.x = -0.10;
 
     raycaster = new THREE.Raycaster();
 
@@ -628,8 +639,7 @@ function initThreeScene() {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // Luces Principales del Spot
-    const hemiLight = new THREE.HemisphereLight(0xfff1d6, 0x1e293b, 0.85);
+    const hemiLight = new THREE.HemisphereLight(0xfff1d6, 0x1e293b, 0.90);
     scene.add(hemiLight);
 
     const dirLight = new THREE.DirectionalLight(0xfff7ed, 1.15);
@@ -646,7 +656,6 @@ function initThreeScene() {
     dirLight.shadow.camera.bottom = -d;
     scene.add(dirLight);
 
-    // Luces de neón ambiental
     const leftNeonLight = new THREE.PointLight(0xef4444, 1.4, 22);
     leftNeonLight.position.set(-7.5, 4.2, -6);
     scene.add(leftNeonLight);
@@ -655,7 +664,6 @@ function initThreeScene() {
     rightNeonLight.position.set(7.5, 4.2, -6);
     scene.add(rightNeonLight);
 
-    // Piso Ajedrezado de Cocina
     const floorMat = new THREE.MeshStandardMaterial({
         map: createCheckeredFloorTexture(),
         roughness: 0.35,
@@ -667,7 +675,6 @@ function initThreeScene() {
     floor.receiveShadow = true;
     scene.add(floor);
 
-    // Paredes Laterales y Fondo con Azulejo
     const wallMat = new THREE.MeshStandardMaterial({
         map: createTileWallTexture(),
         roughness: 0.45,
@@ -689,7 +696,6 @@ function initThreeScene() {
     backWall.receiveShadow = true;
     scene.add(backWall);
 
-    // Franjas de Neón en Paredes
     const neonRedMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
     const neonYellowMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
     [-10.15, 10.15].forEach(xPos => {
@@ -699,7 +705,6 @@ function initThreeScene() {
         neonStrips.push(strip);
     });
 
-    // Letrero Luminoso S.N.A.X. KITCHEN al fondo
     const signBoard = new THREE.Mesh(
         new THREE.BoxGeometry(9.2, 2.2, 0.3),
         new THREE.MeshBasicMaterial({ map: createSnaxSignTexture() })
@@ -707,13 +712,11 @@ function initThreeScene() {
     signBoard.position.set(0, 5.4, -26.5);
     scene.add(signBoard);
 
-    // Campana Extractora de Acero Inoxidable en Techo
     const steelMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.75, roughness: 0.25 });
     const hood = new THREE.Mesh(new THREE.BoxGeometry(14, 1.4, 26), steelMat);
     hood.position.set(0, 7.6, -12);
     scene.add(hood);
 
-    // Lámparas Colgantes Cálidas sobre el Pasillo
     [-16, -6, 3].forEach(zPos => {
         const lampShade = new THREE.Mesh(
             new THREE.ConeGeometry(0.75, 0.55, 16),
@@ -730,7 +733,6 @@ function initThreeScene() {
         scene.add(bulb);
     });
 
-    // Freidoras Industriales Laterales con Aceite Burbujeante
     const oilMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
     [-8.4, 8.4].forEach(xPos => {
         [-15, -7, 1].forEach(zPos => {
@@ -766,7 +768,6 @@ function initThreeScene() {
         });
     });
 
-    // Mostrador de Despacho Frontal (Tu Línea de Defensa)
     const counterBase = new THREE.Mesh(
         new THREE.BoxGeometry(19, 1.35, 1.3),
         new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.4, metalness: 0.4 })
@@ -783,13 +784,12 @@ function initThreeScene() {
     counterNeon.position.set(0, 1.3, 4.42);
     scene.add(counterNeon);
 
-    // Construir Blaster 3D con Tambor Giratorio de Salsas
     buildFirstPersonBlaster();
 }
 
 function buildFirstPersonBlaster() {
     weaponGroup = new THREE.Group();
-    weaponGroup.position.set(0.62, -0.58, -1.18);
+    weaponGroup.position.set(0.68, -0.62, -1.25);
 
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.65, roughness: 0.28 });
     const accentMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.4, roughness: 0.3 });
@@ -803,7 +803,6 @@ function buildFirstPersonBlaster() {
     barrel.position.set(0, 0.03, -0.52);
     weaponGroup.add(barrel);
 
-    // Tambor Giratorio de 4 Cartuchos de Salsa
     drumGroup = new THREE.Group();
     drumGroup.position.set(0, 0.15, -0.14);
 
@@ -849,7 +848,7 @@ function createEnemyHealthTexture(ratio, tagText, hexColor) {
     const ctx = c.getContext('2d');
     ctx.clearRect(0, 0, 256, 64);
 
-    ctx.fillStyle = 'rgba(9, 11, 18, 0.85)';
+    ctx.fillStyle = 'rgba(9, 11, 18, 0.88)';
     ctx.fillRect(18, 4, 220, 26);
     ctx.fillStyle = hexColor;
     ctx.font = 'bold 18px monospace';
@@ -869,7 +868,7 @@ function createEnemyHealthTexture(ratio, tagText, hexColor) {
 
 function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
     const root = new THREE.Group();
-    const scale = isBoss ? 1.55 : 1.0;
+    const scale = isBoss ? 1.50 : 1.02;
     root.scale.set(scale, scale, scale);
 
     const bodyGroup = new THREE.Group();
@@ -988,7 +987,7 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
     }
 
     const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.72, 0.94, 28),
+        new THREE.RingGeometry(0.75, 1.0, 28),
         new THREE.MeshBasicMaterial({ color: weakWeapon.hex, side: THREE.DoubleSide })
     );
     ring.rotation.x = -Math.PI / 2;
@@ -998,7 +997,7 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
     const tagLabel = isBoss ? `👑 JEFE • ${weakWeapon.name}` : weakWeapon.name;
     const hpTex = createEnemyHealthTexture(1.0, tagLabel, weakWeapon.cssHex);
     const hpSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: hpTex, transparent: true }));
-    hpSprite.scale.set(2.1, 0.52, 1);
+    hpSprite.scale.set(2.2, 0.55, 1);
     hpSprite.position.set(0, 2.55, 0);
     root.add(hpSprite);
 
@@ -1014,10 +1013,10 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
 
 // --- Generación y Comportamiento de Enemigos ---
 const ENEMY_TYPES = [
-    { key: 'wing', name: 'ALITA REBELDE', baseHp: 65, baseSpeed: 3.1, points: 35 },
-    { key: 'boneless', name: 'BONELESS RUDOS', baseHp: 85, baseSpeed: 2.6, points: 45 },
-    { key: 'fries', name: 'ESCUADRÓN PAPAS', baseHp: 50, baseSpeed: 3.8, points: 30 },
-    { key: 'wedges', name: 'PAPAS GAJO', baseHp: 75, baseSpeed: 3.2, points: 40 }
+    { key: 'wing', name: 'ALITA REBELDE', baseHp: 60, baseSpeed: 3.1, points: 35 },
+    { key: 'boneless', name: 'BONELESS RUDOS', baseHp: 82, baseSpeed: 2.6, points: 45 },
+    { key: 'fries', name: 'ESCUADRÓN PAPAS', baseHp: 50, baseSpeed: 3.7, points: 30 },
+    { key: 'wedges', name: 'PAPAS GAJO', baseHp: 72, baseSpeed: 3.2, points: 40 }
 ];
 
 function spawnEnemy(forceBoss = false) {
@@ -1031,8 +1030,8 @@ function spawnEnemy(forceBoss = false) {
     const speed = type.baseSpeed * (1 + (wave - 1) * 0.06) * (forceBoss ? 0.72 : 1);
 
     const meshParts = createEnemyMesh(type.key, weakWeapon, forceBoss);
-    const laneX = (Math.random() - 0.5) * 11.5;
-    const startZ = -23 - Math.random() * 3;
+    const laneX = (Math.random() - 0.5) * 11.4;
+    const startZ = -22 - Math.random() * 3;
     meshParts.root.position.set(laneX, 0, startZ);
     scene.add(meshParts.root);
 
@@ -1048,80 +1047,70 @@ function spawnEnemy(forceBoss = false) {
     });
 }
 
-// --- Sistema de Apuntado Directo al Toque + Asistencia Magnética (Aim-Assist) ---
-function aimCameraAtScreenPoint(clientX, clientY, snapImmediately = false) {
+// --- Apuntado Puro (Sin Aim-Assist) + Retroceso Real ---
+function recomputeAimPoint() {
+    const finalScreenX = Math.max(8, Math.min(window.innerWidth - 8, baseAimX + recoilOffsetX));
+    const finalScreenY = Math.max(8, Math.min(window.innerHeight - 8, baseAimY - recoilOffsetY));
+
+    // Posicionar la mira visual exactamente con el retroceso aplicado
+    crosshairEl.style.left = `${finalScreenX}px`;
+    crosshairEl.style.top = `${finalScreenY}px`;
+
+    const normX = (finalScreenX / window.innerWidth) * 2 - 1;
+    const normY = -(finalScreenY / window.innerHeight) * 2 + 1;
+
+    camPanYaw = -normX * 0.065;
+    camPanPitch = -0.10 + normY * 0.04;
+
     if (!camera || !raycaster) return;
 
-    const ndcX = (clientX / window.innerWidth) * 2 - 1;
-    const ndcY = -(clientY / window.innerHeight) * 2 + 1;
-
-    // 1. Proyectar rayo 3D desde el punto exacto donde el usuario tocó/apuntó
-    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+    // Raycast directo desde la mira hacia el mundo 3D (sin imán ni bloqueo)
+    raycaster.setFromCamera(new THREE.Vector2(normX, normY), camera);
     const ray = raycaster.ray;
 
-    // 2. Buscar si hay algún enemigo cerca del rayo para aplicar asistencia magnética (Aim-Assist)
-    let bestEnemy = null;
-    let bestScore = Infinity;
-
-    for (const enemy of enemies) {
-        const center = enemy.root.position.clone().add(new THREE.Vector3(0, enemy.isBoss ? 1.5 : 1.15, 0));
-        const distToRay = ray.distanceToPoint(center);
-        const magnetRadius = enemy.isBoss ? 2.4 : 1.85;
-
-        if (distToRay <= magnetRadius) {
-            const camDist = camera.position.distanceTo(center);
-            const weighted = distToRay * 10 + camDist * 0.15;
-            if (weighted < bestScore) {
-                bestScore = weighted;
-                bestEnemy = center;
-            }
-        }
-    }
-
-    let aimPoint;
-    if (bestEnemy) {
-        aimPoint = bestEnemy;
-        crosshairRingEl.classList.add('crosshair-locked');
+    if (ray.direction.y < -0.02) {
+        const t = (1.1 - ray.origin.y) / ray.direction.y;
+        const clampedT = Math.max(4, Math.min(28, t));
+        aimWorldPoint.copy(ray.origin).addScaledVector(ray.direction, clampedT);
     } else {
-        crosshairRingEl.classList.remove('crosshair-locked');
-        // Intersección con un plano virtual a la altura del pasillo o distancia media
-        aimPoint = ray.origin.clone().addScaledVector(ray.direction, 22);
-    }
-
-    const dx = aimPoint.x - camera.position.x;
-    const dy = aimPoint.y - camera.position.y;
-    const dz = aimPoint.z - camera.position.z;
-    const horizDist = Math.sqrt(dx * dx + dz * dz) || 0.001;
-
-    targetYaw = Math.max(-0.85, Math.min(0.85, Math.atan2(-dx, -dz)));
-    targetPitch = Math.max(-0.42, Math.min(0.35, Math.atan2(dy, horizDist)));
-
-    if (snapImmediately) {
-        yaw = targetYaw;
-        pitch = targetPitch;
+        aimWorldPoint.copy(ray.origin).addScaledVector(ray.direction, 24);
     }
 }
 
-// --- Disparo y Partículas 3D ---
+function updateAimFromScreen(clientX, clientY) {
+    baseAimX = clientX;
+    baseAimY = clientY;
+    recomputeAimPoint();
+}
+
+// --- Disparo 3D con Retroceso Real por Arma ---
 function fireWeapon() {
     if (gameState !== 'PLAYING' || fireCooldown > 0) return;
     const w = WEAPONS[currentWeaponIndex];
     fireCooldown = w.cooldown;
     shotsFired++;
 
-    recoilOffset = 0.16;
+    // Patada física en el modelo 3D del Blaster
+    weaponKickZ = 0.22;
+    weaponKickPitch = 0.14;
+
+    // Patada real acumulativa en la mira (sube y se desvía ligeramente)
+    recoilOffsetY = Math.min(145, recoilOffsetY + w.recoilKickY);
+    recoilOffsetX = Math.max(-75, Math.min(75, recoilOffsetX + (Math.random() - 0.5) * 2 * w.recoilShakeX));
+    recomputeAimPoint();
+
     muzzleFlashMesh.material.opacity = 0.95;
     muzzleLight.intensity = 3.2;
     crosshairEl.classList.add('crosshair-fire');
-    setTimeout(() => crosshairEl.classList.remove('crosshair-fire'), 85);
+    setTimeout(() => crosshairEl.classList.remove('crosshair-fire'), 90);
 
     playSound(w.sound);
 
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
-    const muzzleOrigin = new THREE.Vector3(0.42, -0.35, -1.3).applyMatrix4(camera.matrixWorld);
+    const muzzleOrigin = new THREE.Vector3(0, 0.03, -0.78).applyMatrix4(weaponGroup.matrixWorld);
+    const baseDir = aimWorldPoint.clone().sub(muzzleOrigin).normalize();
 
     for (let i = 0; i < w.count; i++) {
-        const dir = forward.clone();
+        const dir = baseDir.clone();
         dir.x += (Math.random() - 0.5) * w.spread;
         dir.y += (Math.random() - 0.5) * w.spread;
         dir.normalize();
@@ -1166,14 +1155,14 @@ function spawnSplashParticles(pos, hexColor, count = 14) {
 // --- Popups Flotantes y HUD ---
 function createPopup(text, color = '#facc15') {
     const popup = document.createElement('div');
-    popup.className = 'absolute left-1/2 top-1/3 -translate-x-1/2 pixel-font text-[10px] sm:text-xs font-bold pointer-events-none transition-all duration-700 ease-out whitespace-nowrap z-30';
+    popup.className = 'absolute left-1/2 top-1/4 -translate-x-1/2 pixel-font text-[10px] sm:text-xs font-bold pointer-events-none transition-all duration-700 ease-out whitespace-nowrap z-30';
     popup.style.color = color;
     popup.style.textShadow = '2px 2px 0px #000';
     popup.textContent = text;
     popupContainer.appendChild(popup);
 
     requestAnimationFrame(() => {
-        popup.style.transform = 'translate(-50%, -36px)';
+        popup.style.transform = 'translate(-50%, -34px)';
         popup.style.opacity = '0';
     });
     setTimeout(() => popup.remove(), 700);
@@ -1228,22 +1217,32 @@ function animate(now) {
     const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
     lastFrameTime = now;
 
-    // Interpolación ultra rápida y suave hacia el punto apuntado
-    const aimLerp = Math.min(1, dt * 24);
-    yaw += (targetYaw - yaw) * aimLerp;
-    pitch += (targetPitch - pitch) * aimLerp;
+    // Recuperación progresiva del retroceso cuando dejas de disparar
+    if (recoilOffsetY > 0 || Math.abs(recoilOffsetX) > 0.1) {
+        const recoveryRate = isFiring ? 32 : 85;
+        recoilOffsetY = Math.max(0, recoilOffsetY - recoveryRate * dt);
+        recoilOffsetX *= Math.pow(0.08, dt);
+        recomputeAimPoint();
+    }
 
-    camera.rotation.y = yaw;
-    camera.rotation.x = pitch;
+    camera.rotation.y += (camPanYaw - camera.rotation.y) * Math.min(1, dt * 8);
+    camera.rotation.x += (camPanPitch - camera.rotation.x) * Math.min(1, dt * 8);
+    camera.updateMatrixWorld();
+
+    // Orientar cañón 3D + retroceso visual de elevación
+    weaponGroup.lookAt(aimWorldPoint);
+    weaponGroup.rotateY(Math.PI);
+    weaponGroup.rotateX(weaponKickPitch);
 
     if (fireCooldown > 0) fireCooldown -= dt;
-    if ((isFiring || isTriggerButtonHeld) && fireCooldown <= 0) {
+    if (isFiring && fireCooldown <= 0) {
         fireWeapon();
     }
 
-    recoilOffset = Math.max(0, recoilOffset - dt * 1.1);
-    weaponGroup.position.z = -1.18 + recoilOffset;
-    weaponGroup.position.y = -0.58 + Math.sin(now * 0.008) * 0.012;
+    weaponKickZ = Math.max(0, weaponKickZ - dt * 1.2);
+    weaponKickPitch = Math.max(0, weaponKickPitch - dt * 0.9);
+    weaponGroup.position.z = -1.25 + weaponKickZ;
+    weaponGroup.position.y = -0.62 + Math.sin(now * 0.008) * 0.010;
 
     currentDrumAngle += (targetDrumAngle - currentDrumAngle) * Math.min(1, dt * 16);
     drumGroup.rotation.z = currentDrumAngle;
@@ -1253,7 +1252,7 @@ function animate(now) {
         muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 32);
     }
 
-    // Animar burbujas en las freidoras del escenario
+    // Animar burbujas en las freidoras
     for (const b of fryerBubbles) {
         const waveVal = Math.sin(now * 0.001 * b.userData.speed + b.userData.phase);
         b.position.y = b.userData.baseY + Math.max(0, waveVal) * 0.22;
@@ -1261,7 +1260,7 @@ function animate(now) {
         b.scale.set(s, s, s);
     }
 
-    // Control de Oleadas y Aparición de Enemigos
+    // Control de Oleadas
     if (enemiesSpawnedInWave < enemiesPerWave) {
         spawnTimer -= dt;
         if (spawnTimer <= 0) {
@@ -1279,7 +1278,7 @@ function animate(now) {
         updateHUD();
     }
 
-    // Actualizar Proyectiles
+    // Actualizar Proyectiles (Hitbox estricto al cuerpo del enemigo)
     for (let i = projectiles.length - 1; i >= 0; i--) {
         const proj = projectiles[i];
         proj.life -= dt;
@@ -1289,7 +1288,7 @@ function animate(now) {
 
         for (let j = enemies.length - 1; j >= 0; j--) {
             const enemy = enemies[j];
-            const hitRadius = enemy.isBoss ? 1.65 : 1.15;
+            const hitRadius = enemy.isBoss ? 1.38 : 0.92;
             const enemyCenter = enemy.root.position.clone().add(new THREE.Vector3(0, 1.15, 0));
 
             if (proj.mesh.position.distanceTo(enemyCenter) <= hitRadius) {
@@ -1320,7 +1319,7 @@ function animate(now) {
         }
     }
 
-    // Actualizar Enemigos Caminando hacia el Mostrador
+    // Actualizar Enemigos
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
         enemy.walkPhase += dt * (enemy.speed * 3.6);
@@ -1354,7 +1353,7 @@ function animate(now) {
         }
     }
 
-    // Actualizar Partículas de Salpicadura
+    // Actualizar Partículas
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.life -= dt;
@@ -1375,7 +1374,7 @@ function applyDamageToEnemy(index, dmg, isCritical, hexColor) {
     if (!enemy) return;
 
     enemy.hp -= dmg;
-    enemy.root.position.z -= 0.28;
+    enemy.root.position.z -= 0.25;
 
     if (enemy.hp <= 0) {
         const mult = streak >= 6 ? 2 : 1;
@@ -1409,18 +1408,8 @@ function applyDamageToEnemy(index, dmg, isCritical, hexColor) {
     }
 }
 
-// --- Controles Unificados Pointer Events (Táctil Directo en Celular + Ratón en PC) ---
+// --- Controles Directos Estilo Pistola Arcade (Puro Pulso) ---
 let activeAimPointerId = null;
-
-function showTouchReticle(x, y) {
-    touchReticleEl.style.left = `${x}px`;
-    touchReticleEl.style.top = `${y}px`;
-    touchReticleEl.classList.remove('hidden');
-}
-
-function hideTouchReticle() {
-    touchReticleEl.classList.add('hidden');
-}
 
 gameCanvas.addEventListener('pointerdown', (e) => {
     if (gameState !== 'PLAYING') return;
@@ -1432,24 +1421,15 @@ gameCanvas.addEventListener('pointerdown', (e) => {
     activeAimPointerId = e.pointerId;
     gameCanvas.setPointerCapture(e.pointerId);
 
-    // Apuntar al instante hacia donde tocó el dedo y disparar de inmediato
-    aimCameraAtScreenPoint(e.clientX, e.clientY, true);
+    updateAimFromScreen(e.clientX, e.clientY);
     isFiring = true;
     fireWeapon();
-
-    if (e.pointerType !== 'mouse') {
-        showTouchReticle(e.clientX, e.clientY);
-    }
 });
 
 gameCanvas.addEventListener('pointermove', (e) => {
     if (gameState !== 'PLAYING') return;
-
-    if (e.pointerType === 'mouse') {
-        aimCameraAtScreenPoint(e.clientX, e.clientY, false);
-    } else if (e.pointerId === activeAimPointerId) {
-        aimCameraAtScreenPoint(e.clientX, e.clientY, false);
-        showTouchReticle(e.clientX, e.clientY);
+    if (e.pointerType === 'mouse' || e.pointerId === activeAimPointerId) {
+        updateAimFromScreen(e.clientX, e.clientY);
     }
 });
 
@@ -1457,7 +1437,6 @@ function releaseAimPointer(e) {
     if (e.pointerId === activeAimPointerId) {
         activeAimPointerId = null;
         isFiring = false;
-        hideTouchReticle();
     } else if (e.pointerType === 'mouse') {
         isFiring = false;
     }
@@ -1471,23 +1450,6 @@ window.addEventListener('wheel', (e) => {
     if (gameState !== 'PLAYING') return;
     rotateWeaponDrum(e.deltaY > 0 ? 1 : -1);
 }, { passive: true });
-
-// Gatillo Táctico Opcional (Multi-Touch: puedes mantenerlo mientras mueves otro dedo)
-fireTouchBtn.addEventListener('pointerdown', (e) => {
-    e.stopPropagation();
-    if (gameState !== 'PLAYING') return;
-    isTriggerButtonHeld = true;
-    fireWeapon();
-});
-
-fireTouchBtn.addEventListener('pointerup', (e) => {
-    e.stopPropagation();
-    isTriggerButtonHeld = false;
-});
-
-fireTouchBtn.addEventListener('pointercancel', () => {
-    isTriggerButtonHeld = false;
-});
 
 // Atajos de Teclado
 window.addEventListener('keydown', (e) => {
@@ -1560,14 +1522,16 @@ async function startGame() {
     enemiesSpawnedInWave = 0;
     enemiesPerWave = 7;
     spawnTimer = 0.4;
-    yaw = 0;
-    pitch = -0.04;
-    targetYaw = 0;
-    targetPitch = -0.04;
+    camPanYaw = 0;
+    camPanPitch = -0.10;
+    camera.rotation.y = 0;
+    camera.rotation.x = -0.10;
+    recoilOffsetX = 0;
+    recoilOffsetY = 0;
+    weaponKickZ = 0;
+    weaponKickPitch = 0;
     isFiring = false;
-    isTriggerButtonHeld = false;
     activeAimPointerId = null;
-    hideTouchReticle();
     unlockedRewardsThisRun = [];
 
     if (rewardToastTimeout) clearTimeout(rewardToastTimeout);
@@ -1580,6 +1544,7 @@ async function startGame() {
     gameOverScreen.classList.remove('flex');
     gameArena.classList.remove('hidden');
 
+    updateAimFromScreen(window.innerWidth * 0.5, window.innerHeight * 0.45);
     selectWeapon(0);
     updateHUD();
 
@@ -1593,9 +1558,7 @@ function pauseGame() {
     if (gameState !== 'PLAYING') return;
     gameState = 'PAUSED';
     isFiring = false;
-    isTriggerButtonHeld = false;
     activeAimPointerId = null;
-    hideTouchReticle();
     stopBGM();
     if (animFrameId) cancelAnimationFrame(animFrameId);
     pauseSummaryEl.textContent = `Oleada ${wave} • ${score} PTS`;
@@ -1618,9 +1581,7 @@ function exitToMainMenu() {
     if (animFrameId) cancelAnimationFrame(animFrameId);
     gameState = 'START';
     isFiring = false;
-    isTriggerButtonHeld = false;
     activeAimPointerId = null;
-    hideTouchReticle();
     clearEntities();
 
     pauseScreen.classList.add('hidden');
@@ -1637,9 +1598,7 @@ function exitToMainMenu() {
 function triggerGameOver() {
     gameState = 'GAMEOVER';
     isFiring = false;
-    isTriggerButtonHeld = false;
     activeAimPointerId = null;
-    hideTouchReticle();
     stopBGM();
     if (animFrameId) cancelAnimationFrame(animFrameId);
     rewardToast.classList.add('hidden');
