@@ -114,7 +114,19 @@ html, body {
     transform: translateY(-4px) scale(1.06);
 }
 
-/* Expansión de mira por retroceso al disparar */
+/* Expansión de mira al disparar */
 .crosshair-fire #crosshair-ring {
-    transform: scale(1.38);
+    transform: scale(1.32);
+}
+
+/* Feedback visual del botón de disparo táctil */
+#mobile-fire-btn.firing {
+    transform: scale(0.92);
+    background-color: rgba(250, 204, 21, 0.92);
+    border-color: #ffffff;
+    box-shadow: 0 0 30px rgba(250, 204, 21, 0.95);
+}
+
+#mobile-fire-btn.firing span {
+    color: #09090b;
 }
