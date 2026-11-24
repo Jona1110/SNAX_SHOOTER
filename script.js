@@ -1,7 +1,8 @@
 // ============================================================================
-// S.N.A.X. ARCADE: SAUCE BLASTER 3D (PUNTERÍA DIRECTA + HORDA DESAFIANTE)
-// Sin auto-aim ni retroceso en la mira. Enemigos con mayor resistencia y
-// velocidad creciente para exigir rotación rápida de salsas y precisión.
+// S.N.A.X. ARCADE: SAUCE BLASTER 3D (SHOOTER MÓVIL + PC)
+// - En Celular/Táctil: Mira centrada libre de dedos; deslizar gira la cámara
+//   para apuntar y el botón dedicado FUEGO dispara (soporte multitouch).
+// - En PC/Mouse: Apuntado directo con cursor + clic izquierdo.
 // ============================================================================
 
 const DEFAULT_SHEETS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbylvNCwAIEdpA9eZVyysRwldPQSklgHcyywPIHVqB6qkPGu5IlngXCgEqCtazrA5FP3/exec";
@@ -310,6 +311,8 @@ const crosshairEl = document.getElementById('crosshair');
 const crosshairRingEl = document.getElementById('crosshair-ring');
 const crosshairDotEl = document.getElementById('crosshair-dot');
 const crosshairSauceTagEl = document.getElementById('crosshair-sauce-tag');
+const mobileAimHintEl = document.getElementById('mobile-aim-hint');
+const mobileFireBtn = document.getElementById('mobile-fire-btn');
 const popupContainer = document.getElementById('popup-container');
 
 const rotateDrumBtn = document.getElementById('rotate-drum-btn');
@@ -358,6 +361,7 @@ let gameState = 'START';
 let currentWeaponIndex = 0;
 let fireCooldown = 0;
 let isFiring = false;
+let isTouchControlMode = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
 let score = 0;
 let lives = 3;
@@ -386,8 +390,8 @@ let projectiles = [];
 let particles = [];
 
 let aimWorldPoint = new THREE.Vector3(0, 1.5, -12);
-let camPanYaw = 0;
-let camPanPitch = -0.10;
+let camYaw = 0;
+let camPitch = -0.09;
 
 let weaponKickZ = 0;
 let targetDrumAngle = 0;
@@ -492,11 +496,11 @@ function buildWeaponDrumUI() {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.dataset.idx = String(idx);
-        btn.className = `drum-slot px-2.5 py-2 rounded-lg border-2 flex items-center gap-1.5 bg-zinc-900/95 ${idx === currentWeaponIndex ? 'active border-white shadow-lg' : 'border-zinc-700 opacity-75'}`;
+        btn.className = `drum-slot px-2 py-1.5 sm:px-2.5 sm:py-2 rounded-lg border-2 flex items-center gap-1 sm:gap-1.5 bg-zinc-900/95 shrink-0 ${idx === currentWeaponIndex ? 'active border-white shadow-lg' : 'border-zinc-700 opacity-75'}`;
         btn.innerHTML = `
-            <span class="w-3.5 h-3.5 rounded-full border border-white shrink-0" style="background:${w.cssHex}"></span>
-            <span class="pixel-font text-[8px] text-white">${w.name}</span>
-            <span class="pixel-font text-[8px] text-yellow-300 hidden sm:inline">[${w.key}]</span>
+            <span class="w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border border-white shrink-0" style="background:${w.cssHex}"></span>
+            <span class="pixel-font text-[7px] sm:text-[8px] text-white">${w.name}</span>
+            <span class="pixel-font text-[8px] text-yellow-300 hidden md:inline">[${w.key}]</span>
         `;
         btn.addEventListener('pointerdown', (e) => {
             e.stopPropagation();
@@ -614,7 +618,7 @@ function initThreeScene() {
     camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.position.set(0, 3.35, 8.6);
     camera.rotation.order = 'YXZ';
-    camera.rotation.x = -0.10;
+    camera.rotation.x = -0.09;
 
     raycaster = new THREE.Raycaster();
 
@@ -996,7 +1000,7 @@ function createEnemyMesh(typeKey, weakWeapon, isBoss = false) {
     };
 }
 
-// --- Generación y Comportamiento de Enemigos (Más Vida y Mayor Velocidad) ---
+// --- Generación y Comportamiento de Enemigos ---
 const ENEMY_TYPES = [
     { key: 'wing', name: 'ALITA REBELDE', baseHp: 110, baseSpeed: 4.3, points: 45 },
     { key: 'boneless', name: 'BONELESS RUDOS', baseHp: 150, baseSpeed: 3.7, points: 55 },
@@ -1032,8 +1036,46 @@ function spawnEnemy(forceBoss = false) {
     });
 }
 
-// --- Apuntado Directo Sin Auto-Aim ni Retroceso ---
-function updateAimFromScreen(clientX, clientY) {
+// --- Sistema Dual de Apuntado (Shooter Móvil vs PC Mouse) ---
+function setControlMode(touchMode) {
+    isTouchControlMode = touchMode;
+    if (isTouchControlMode) {
+        mobileFireBtn.classList.remove('hidden');
+        mobileAimHintEl.classList.remove('hidden');
+        crosshairEl.style.left = '50%';
+        crosshairEl.style.top = '45%';
+        updateAimFromCenterCrosshair();
+    } else {
+        mobileFireBtn.classList.add('hidden');
+        mobileAimHintEl.classList.add('hidden');
+    }
+}
+
+// En modo móvil: la mira está fija en el centro (50%, 45%) y la cámara rota suavemente
+function updateAimFromCenterCrosshair() {
+    crosshairEl.style.left = '50%';
+    crosshairEl.style.top = '45%';
+
+    if (!camera || !raycaster) return;
+    camera.rotation.y = camYaw;
+    camera.rotation.x = camPitch;
+    camera.updateMatrixWorld();
+
+    // Raycast en el punto exacto de la mira central (y = +0.10 en NDC equivale a top: 45%)
+    raycaster.setFromCamera(new THREE.Vector2(0, 0.10), camera);
+    const ray = raycaster.ray;
+
+    if (ray.direction.y < -0.02) {
+        const t = (1.15 - ray.origin.y) / ray.direction.y;
+        const clampedT = Math.max(4, Math.min(28, t));
+        aimWorldPoint.copy(ray.origin).addScaledVector(ray.direction, clampedT);
+    } else {
+        aimWorldPoint.copy(ray.origin).addScaledVector(ray.direction, 24);
+    }
+}
+
+// En modo PC (Mouse): el cursor mueve la mira directamente
+function updateAimFromMouse(clientX, clientY) {
     const screenX = Math.max(8, Math.min(window.innerWidth - 8, clientX));
     const screenY = Math.max(8, Math.min(window.innerHeight - 8, clientY));
 
@@ -1043,8 +1085,8 @@ function updateAimFromScreen(clientX, clientY) {
     const normX = (screenX / window.innerWidth) * 2 - 1;
     const normY = -(screenY / window.innerHeight) * 2 + 1;
 
-    camPanYaw = -normX * 0.065;
-    camPanPitch = -0.10 + normY * 0.04;
+    camYaw = -normX * 0.075;
+    camPitch = -0.09 + normY * 0.045;
 
     if (!camera || !raycaster) return;
 
@@ -1052,7 +1094,7 @@ function updateAimFromScreen(clientX, clientY) {
     const ray = raycaster.ray;
 
     if (ray.direction.y < -0.02) {
-        const t = (1.1 - ray.origin.y) / ray.direction.y;
+        const t = (1.15 - ray.origin.y) / ray.direction.y;
         const clampedT = Math.max(4, Math.min(28, t));
         aimWorldPoint.copy(ray.origin).addScaledVector(ray.direction, clampedT);
     } else {
@@ -1067,7 +1109,6 @@ function fireWeapon() {
     fireCooldown = w.cooldown;
     shotsFired++;
 
-    // Vibración mínima de impacto en el cañón (sin mover la mira)
     weaponKickZ = 0.14;
 
     muzzleFlashMesh.material.opacity = 0.95;
@@ -1188,9 +1229,13 @@ function animate(now) {
     const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
     lastFrameTime = now;
 
-    camera.rotation.y += (camPanYaw - camera.rotation.y) * Math.min(1, dt * 8);
-    camera.rotation.x += (camPanPitch - camera.rotation.x) * Math.min(1, dt * 8);
-    camera.updateMatrixWorld();
+    if (isTouchControlMode) {
+        updateAimFromCenterCrosshair();
+    } else {
+        camera.rotation.y += (camYaw - camera.rotation.y) * Math.min(1, dt * 10);
+        camera.rotation.x += (camPitch - camera.rotation.x) * Math.min(1, dt * 10);
+        camera.updateMatrixWorld();
+    }
 
     weaponGroup.lookAt(aimWorldPoint);
     weaponGroup.rotateY(Math.PI);
@@ -1279,7 +1324,7 @@ function animate(now) {
         }
     }
 
-    // Actualizar Enemigos (Avance rápido y evasivo)
+    // Actualizar Enemigos
     for (let i = enemies.length - 1; i >= 0; i--) {
         const enemy = enemies[i];
         enemy.walkPhase += dt * (enemy.speed * 3.8);
@@ -1368,43 +1413,97 @@ function applyDamageToEnemy(index, dmg, isCritical, hexColor) {
     }
 }
 
-// --- Controles Directos Estilo Pistola Arcade ---
-let activeAimPointerId = null;
+// --- Controles Multitouch Shooter (Celular) y Mouse Directo (PC) ---
+let dragAimPointerId = null;
+let lastDragX = 0;
+let lastDragY = 0;
+let fireButtonPointerId = null;
 
+// Área principal de pantalla:
+// - En Touch: deslizar mueve la cámara/mira central sin tapar objetivos.
+// - En Mouse: mover apunta directamente y clic izquierdo dispara.
 gameCanvas.addEventListener('pointerdown', (e) => {
     if (gameState !== 'PLAYING') return;
-    if (e.button !== undefined && e.button !== 0 && e.pointerType === 'mouse') {
-        if (e.button === 2) rotateWeaponDrum(1);
-        return;
+
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+        if (!isTouchControlMode) setControlMode(true);
+        if (dragAimPointerId === null) {
+            dragAimPointerId = e.pointerId;
+            lastDragX = e.clientX;
+            lastDragY = e.clientY;
+            gameCanvas.setPointerCapture(e.pointerId);
+        }
+    } else {
+        // Modo PC Mouse
+        if (isTouchControlMode) setControlMode(false);
+        if (e.button === 2) {
+            rotateWeaponDrum(1);
+            return;
+        }
+        if (e.button === 0) {
+            updateAimFromMouse(e.clientX, e.clientY);
+            isFiring = true;
+            fireWeapon();
+        }
     }
-
-    activeAimPointerId = e.pointerId;
-    gameCanvas.setPointerCapture(e.pointerId);
-
-    updateAimFromScreen(e.clientX, e.clientY);
-    isFiring = true;
-    fireWeapon();
 });
 
 gameCanvas.addEventListener('pointermove', (e) => {
     if (gameState !== 'PLAYING') return;
-    if (e.pointerType === 'mouse' || e.pointerId === activeAimPointerId) {
-        updateAimFromScreen(e.clientX, e.clientY);
+
+    if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+        if (e.pointerId === dragAimPointerId) {
+            const dx = e.clientX - lastDragX;
+            const dy = e.clientY - lastDragY;
+            lastDragX = e.clientX;
+            lastDragY = e.clientY;
+
+            const sensitivity = 0.0024;
+            camYaw = Math.max(-0.52, Math.min(0.52, camYaw - dx * sensitivity));
+            camPitch = Math.max(-0.34, Math.min(0.18, camPitch - dy * sensitivity));
+            updateAimFromCenterCrosshair();
+        }
+    } else {
+        if (isTouchControlMode) setControlMode(false);
+        updateAimFromMouse(e.clientX, e.clientY);
     }
 });
 
-function releaseAimPointer(e) {
-    if (e.pointerId === activeAimPointerId) {
-        activeAimPointerId = null;
-        isFiring = false;
-    } else if (e.pointerType === 'mouse') {
+function releaseCanvasPointer(e) {
+    if (e.pointerId === dragAimPointerId) {
+        dragAimPointerId = null;
+    }
+    if (e.pointerType === 'mouse') {
         isFiring = false;
     }
 }
 
-gameCanvas.addEventListener('pointerup', releaseAimPointer);
-gameCanvas.addEventListener('pointercancel', releaseAimPointer);
+gameCanvas.addEventListener('pointerup', releaseCanvasPointer);
+gameCanvas.addEventListener('pointercancel', releaseCanvasPointer);
 gameCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// Botón Táctil Independiente de Disparo (Pulgar Derecho)
+mobileFireBtn.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    if (gameState !== 'PLAYING') return;
+    fireButtonPointerId = e.pointerId;
+    mobileFireBtn.setPointerCapture(e.pointerId);
+    mobileFireBtn.classList.add('firing');
+    isFiring = true;
+    fireWeapon();
+});
+
+function releaseMobileFireBtn(e) {
+    e.stopPropagation();
+    if (e.pointerId === fireButtonPointerId || fireButtonPointerId === null) {
+        fireButtonPointerId = null;
+        isFiring = false;
+        mobileFireBtn.classList.remove('firing');
+    }
+}
+
+mobileFireBtn.addEventListener('pointerup', releaseMobileFireBtn);
+mobileFireBtn.addEventListener('pointercancel', releaseMobileFireBtn);
 
 window.addEventListener('wheel', (e) => {
     if (gameState !== 'PLAYING') return;
@@ -1437,6 +1536,7 @@ window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    if (isTouchControlMode) updateAimFromCenterCrosshair();
 });
 
 // --- Flujo de Partida (Inicio, Pausa, Game Over) ---
@@ -1447,6 +1547,13 @@ function clearEntities() {
     enemies = [];
     projectiles = [];
     particles = [];
+}
+
+function resetInputState() {
+    isFiring = false;
+    dragAimPointerId = null;
+    fireButtonPointerId = null;
+    mobileFireBtn.classList.remove('firing');
 }
 
 async function startGame() {
@@ -1468,6 +1575,7 @@ async function startGame() {
     initAudio();
     initThreeScene();
     clearEntities();
+    resetInputState();
 
     if (animFrameId) cancelAnimationFrame(animFrameId);
 
@@ -1482,13 +1590,11 @@ async function startGame() {
     enemiesSpawnedInWave = 0;
     enemiesPerWave = 9;
     spawnTimer = 0.35;
-    camPanYaw = 0;
-    camPanPitch = -0.10;
+    camYaw = 0;
+    camPitch = -0.09;
     camera.rotation.y = 0;
-    camera.rotation.x = -0.10;
+    camera.rotation.x = -0.09;
     weaponKickZ = 0;
-    isFiring = false;
-    activeAimPointerId = null;
     unlockedRewardsThisRun = [];
 
     if (rewardToastTimeout) clearTimeout(rewardToastTimeout);
@@ -1501,7 +1607,11 @@ async function startGame() {
     gameOverScreen.classList.remove('flex');
     gameArena.classList.remove('hidden');
 
-    updateAimFromScreen(window.innerWidth * 0.5, window.innerHeight * 0.45);
+    setControlMode(('ontouchstart' in window) || (navigator.maxTouchPoints > 0));
+    if (!isTouchControlMode) {
+        updateAimFromMouse(window.innerWidth * 0.5, window.innerHeight * 0.45);
+    }
+
     selectWeapon(0);
     updateHUD();
 
@@ -1514,8 +1624,7 @@ async function startGame() {
 function pauseGame() {
     if (gameState !== 'PLAYING') return;
     gameState = 'PAUSED';
-    isFiring = false;
-    activeAimPointerId = null;
+    resetInputState();
     stopBGM();
     if (animFrameId) cancelAnimationFrame(animFrameId);
     pauseSummaryEl.textContent = `Oleada ${wave} • ${score} PTS`;
@@ -1537,8 +1646,7 @@ function exitToMainMenu() {
     stopBGM();
     if (animFrameId) cancelAnimationFrame(animFrameId);
     gameState = 'START';
-    isFiring = false;
-    activeAimPointerId = null;
+    resetInputState();
     clearEntities();
 
     pauseScreen.classList.add('hidden');
@@ -1554,8 +1662,7 @@ function exitToMainMenu() {
 
 function triggerGameOver() {
     gameState = 'GAMEOVER';
-    isFiring = false;
-    activeAimPointerId = null;
+    resetInputState();
     stopBGM();
     if (animFrameId) cancelAnimationFrame(animFrameId);
     rewardToast.classList.add('hidden');
