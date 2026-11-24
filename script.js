@@ -1,7 +1,7 @@
 // ============================================================================
 // S.N.A.X. ARCADE: SAUCE BLASTER 3D (SHOOTER MÓVIL + PC)
 // - En Celular/Táctil: Mira centrada libre de dedos; deslizar gira la cámara
-//   para apuntar y el botón dedicado FUEGO dispara (soporte multitouch).
+//   con amplio rango en todas las direcciones y alta sensibilidad + botón FUEGO.
 // - En PC/Mouse: Apuntado directo con cursor + clic izquierdo.
 // ============================================================================
 
@@ -392,6 +392,12 @@ let particles = [];
 let aimWorldPoint = new THREE.Vector3(0, 1.5, -12);
 let camYaw = 0;
 let camPitch = -0.09;
+
+// Configuración de Sensibilidad y Rango Libre de Cámara Táctil
+const TOUCH_LOOK_SENSITIVITY = 0.0052;
+const MAX_CAM_YAW = 1.35;      // ~77° hacia izquierda y derecha (>154° panorámico libre)
+const MIN_CAM_PITCH = -0.65;   // Mirar hacia abajo hasta el mostrador
+const MAX_CAM_PITCH = 0.55;    // Mirar libremente hacia arriba
 
 let weaponKickZ = 0;
 let targetDrumAngle = 0;
@@ -1051,7 +1057,18 @@ function setControlMode(touchMode) {
     }
 }
 
-// En modo móvil: la mira está fija en el centro (50%, 45%) y la cámara rota suavemente
+// Proyección libre del rayo de apuntado (soporta mirar hacia piso, enemigos, muros o techo)
+function computeAimPointFromRay(ray) {
+    if (ray.direction.y < -0.02) {
+        const t = (1.15 - ray.origin.y) / ray.direction.y;
+        const clampedT = Math.max(2.5, Math.min(32, t));
+        aimWorldPoint.copy(ray.origin).addScaledVector(ray.direction, clampedT);
+    } else {
+        aimWorldPoint.copy(ray.origin).addScaledVector(ray.direction, 26);
+    }
+}
+
+// En modo móvil: la mira está fija en el centro (50%, 45%) y la cámara rota libremente
 function updateAimFromCenterCrosshair() {
     crosshairEl.style.left = '50%';
     crosshairEl.style.top = '45%';
@@ -1063,15 +1080,7 @@ function updateAimFromCenterCrosshair() {
 
     // Raycast en el punto exacto de la mira central (y = +0.10 en NDC equivale a top: 45%)
     raycaster.setFromCamera(new THREE.Vector2(0, 0.10), camera);
-    const ray = raycaster.ray;
-
-    if (ray.direction.y < -0.02) {
-        const t = (1.15 - ray.origin.y) / ray.direction.y;
-        const clampedT = Math.max(4, Math.min(28, t));
-        aimWorldPoint.copy(ray.origin).addScaledVector(ray.direction, clampedT);
-    } else {
-        aimWorldPoint.copy(ray.origin).addScaledVector(ray.direction, 24);
-    }
+    computeAimPointFromRay(raycaster.ray);
 }
 
 // En modo PC (Mouse): el cursor mueve la mira directamente
@@ -1085,21 +1094,13 @@ function updateAimFromMouse(clientX, clientY) {
     const normX = (screenX / window.innerWidth) * 2 - 1;
     const normY = -(screenY / window.innerHeight) * 2 + 1;
 
-    camYaw = -normX * 0.075;
-    camPitch = -0.09 + normY * 0.045;
+    camYaw = -normX * 0.22;
+    camPitch = -0.09 + normY * 0.16;
 
     if (!camera || !raycaster) return;
 
     raycaster.setFromCamera(new THREE.Vector2(normX, normY), camera);
-    const ray = raycaster.ray;
-
-    if (ray.direction.y < -0.02) {
-        const t = (1.15 - ray.origin.y) / ray.direction.y;
-        const clampedT = Math.max(4, Math.min(28, t));
-        aimWorldPoint.copy(ray.origin).addScaledVector(ray.direction, clampedT);
-    } else {
-        aimWorldPoint.copy(ray.origin).addScaledVector(ray.direction, 24);
-    }
+    computeAimPointFromRay(raycaster.ray);
 }
 
 // --- Disparo 3D ---
@@ -1420,7 +1421,7 @@ let lastDragY = 0;
 let fireButtonPointerId = null;
 
 // Área principal de pantalla:
-// - En Touch: deslizar mueve la cámara/mira central sin tapar objetivos.
+// - En Touch: deslizar mueve la cámara/mira central libremente sin tapar objetivos.
 // - En Mouse: mover apunta directamente y clic izquierdo dispara.
 gameCanvas.addEventListener('pointerdown', (e) => {
     if (gameState !== 'PLAYING') return;
@@ -1458,9 +1459,8 @@ gameCanvas.addEventListener('pointermove', (e) => {
             lastDragX = e.clientX;
             lastDragY = e.clientY;
 
-            const sensitivity = 0.0024;
-            camYaw = Math.max(-0.52, Math.min(0.52, camYaw - dx * sensitivity));
-            camPitch = Math.max(-0.34, Math.min(0.18, camPitch - dy * sensitivity));
+            camYaw = Math.max(-MAX_CAM_YAW, Math.min(MAX_CAM_YAW, camYaw - dx * TOUCH_LOOK_SENSITIVITY));
+            camPitch = Math.max(MIN_CAM_PITCH, Math.min(MAX_CAM_PITCH, camPitch - dy * TOUCH_LOOK_SENSITIVITY));
             updateAimFromCenterCrosshair();
         }
     } else {
